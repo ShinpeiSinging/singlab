@@ -57,7 +57,7 @@
 };
 
 const MIC_ANALYSIS_FFT_SIZE = 4096;
-const PITCH_DISPLAY_ALIGNMENT_SECONDS = 0.045;
+const PITCH_VISUAL_LEAD_SECONDS = 0.055;
 
 const demoMusicXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -1836,7 +1836,7 @@ async function startMic() {
     const now = (performance.now() / 1000) - micState.captureClock;
     const guideClock = midiState.playback.playing ? getMidiPlaybackPositionSeconds() : now;
     const analysisLatencySeconds = (analyser.fftSize / audioContext.sampleRate) * 0.5;
-    const historyTime = Math.max(0, guideClock - analysisLatencySeconds + PITCH_DISPLAY_ALIGNMENT_SECONDS);
+    const historyTime = Math.max(0, guideClock - analysisLatencySeconds - PITCH_VISUAL_LEAD_SECONDS);
     const thresholds = getVoiceThresholdPreset();
     const strongEnough = Number.isFinite(frequency) && confidence >= thresholds.confidence && rms >= thresholds.rms;
     if (strongEnough) {
