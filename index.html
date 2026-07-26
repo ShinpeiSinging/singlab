@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SingLab | Real-time Singing Pitch Analyzer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <main class="shell">
+      <header class="hero">
+        <div class="hero-copy"></div>
+      </header>
+
+      <section class="grid grid-top">
+        <section class="panel sidebar" id="workspace">
+          <div class="panel-head">
+            <h2>入力</h2>
+            <p>MIDI を選ぶと、お手本のトラック一覧が出ます。下の表示と合わせて使ってください。</p>
+          </div>
+
+          <div class="mini-stack">
+            <label class="field">
+              <span>MIDI ファイル</span>
+              <input id="midi-file" type="file" accept=".mid,.midi,audio/midi" />
+            </label>
+
+            <label class="field legacy-voice-range">
+              <span>音域</span>
+              <select id="voice-range-legacy" class="voice-range-select">
+                <option value="male">男性</option>
+                <option value="female">女性</option>
+              </select>
+            </label>
+
+            <div class="chart-card mini-control-card">
+              <div class="chart-head">
+                <h3>MIDI お手本</h3>
+                <span id="midi-top-status">未読込</span>
+              </div>
+              <div class="midi-track-meta" id="midi-top-selected">トラック未選択</div>
+              <div class="midi-card-grid">
+                <div class="midi-card-main">
+                  <select id="midi-part-list" class="midi-part-select"></select>
+                  <div class="midi-playback-row">
+                    <button class="button secondary" id="midi-stop" type="button">停止</button>
+                    <div class="midi-seek-wrap">
+                      <span id="midi-time-label">00:00 / 00:00</span>
+                      <input id="midi-seek" type="range" min="0" max="100" value="0" />
+                      <div class="midi-volume-wrap">
+                        <span id="midi-volume-label">音量 70%</span>
+                        <input id="midi-volume" type="range" min="0" max="100" value="70" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="midi-track-actions">
+                    <button class="button secondary" id="midi-top-auto-exclude" type="button">自動選択</button>
+                    <button class="button secondary" id="midi-top-use-score" type="button">差分を更新</button>
+                  </div>
+                </div>
+                <div class="midi-card-side">
+                  <div class="midi-debug-log" id="midi-debug-log"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="chart-card compact-card">
+              <div class="chart-head">
+                <h3>リアルタイム・ピッチグラフ</h3>
+                <span id="mic-status">停止中</span>
+              </div>
+              <div class="live-strip">
+                <div class="live-strip-item">
+                  <span>ピッチ</span>
+                  <strong id="mic-note">--</strong>
+                </div>
+                <div class="live-strip-item">
+                  <span>周波数</span>
+                  <strong id="mic-frequency">--</strong>
+                </div>
+                <div class="live-strip-item">
+                  <span>安定度</span>
+                  <strong id="mic-confidence">--</strong>
+                </div>
+                <div class="live-strip-item">
+                  <span>変化</span>
+                  <strong id="mic-trend">--</strong>
+                </div>
+              </div>
+              <canvas id="mic-chart" width="900" height="240"></canvas>
+              <div class="graph-option-row">
+                <label>
+                  <span>声域</span>
+                  <select id="voice-range" class="voice-range-select">
+                    <option value="male">男性</option>
+                    <option value="female">女性</option>
+                  </select>
+                </label>
+                <label>
+                  <span>横幅</span>
+                  <select id="graph-scale" class="graph-option-select">
+                    <option value="3">3倍</option>
+                    <option value="2" selected>2倍</option>
+                    <option value="1">1倍</option>
+                    <option value="0.5">1/2倍</option>
+                    <option value="0.333333">1/3倍</option>
+                  </select>
+                </label>
+                <label>
+                  <span>歌声閾値</span>
+                  <select id="voice-threshold" class="graph-option-select">
+                    <option value="low">低め</option>
+                    <option value="normal" selected>標準</option>
+                    <option value="high">高め</option>
+                    <option value="strict">かなり高め</option>
+                  </select>
+                </label>
+                <label>
+                  <span>検出</span>
+                  <select id="pitch-model" class="graph-option-select">
+                    <option value="hybrid" selected>Hybrid</option>
+                    <option value="yin">YIN</option>
+                    <option value="mpm">MPM</option>
+                    <option value="acf">ACF</option>
+                    <option value="amdf">AMDF</option>
+                    <option value="crepe" disabled>CREPE 要モデル</option>
+                    <option value="spice" disabled>SPICE 要モデル</option>
+                    <option value="basic-pitch" disabled>Basic Pitch 録音後</option>
+                  </select>
+                </label>
+              </div>
+              <div class="actions compact">
+                <button class="button primary" id="mic-start" type="button">再生・採点開始</button>
+                <button class="button secondary" id="mic-stop" type="button">停止</button>
+                <button class="button secondary" id="metronome-toggle" type="button">メトロノーム</button>
+                <button class="button secondary" id="save-take" type="button">テイク保存</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel stage" id="monitor">
+          <div class="chart-card">
+            <div class="chart-head">
+              <h3>音声の見え方</h3>
+              <span id="audio-status">音声停止中</span>
+            </div>
+            <div class="status-grid">
+              <div class="status-item">
+                <span>再生位置</span>
+                <strong id="audio-progress">0.0 / 0.0 sec</strong>
+              </div>
+              <div class="status-item">
+                <span>期待音</span>
+                <strong id="audio-note">--</strong>
+              </div>
+              <div class="status-item">
+                <span>同期</span>
+                <strong id="sync-status">推定 0.0s / 補正 0.0s / 合計 0.0s</strong>
+              </div>
+            </div>
+            <div class="actions compact">
+              <button class="button secondary" id="audio-play" type="button">音声再生</button>
+              <button class="button secondary" id="audio-stop" type="button">音声停止</button>
+              <button class="button secondary" id="sync-start" type="button">音声+録音</button>
+              <button class="button secondary" id="auto-delay" type="button">無音検出</button>
+            </div>
+          </div>
+
+          <div class="chart-card">
+            <div class="chart-head">
+              <h3>音高可視化</h3>
+              <span id="chart-caption">声種に合わせた2オクターブ表示</span>
+            </div>
+            <div class="results">
+              <article class="result-card">
+                <span>推定ピッチ一致率</span>
+                <strong id="result-pitch-match">--</strong>
+              </article>
+              <article class="result-card">
+                <span>平均開始ズレ</span>
+                <strong id="result-onset">--</strong>
+              </article>
+              <article class="result-card">
+                <span>平均継続比</span>
+                <strong id="result-duration">--</strong>
+              </article>
+              <article class="result-card">
+                <span>テンポ差</span>
+                <strong id="result-tempo-diff">--</strong>
+              </article>
+            </div>
+            <canvas id="pitch-chart" width="900" height="260"></canvas>
+          </div>
+
+          <div class="chart-card">
+            <div class="chart-head">
+              <h3>スコアフォロー</h3>
+              <span id="score-follow-status">未開始</span>
+            </div>
+            <canvas id="score-follow-chart" width="900" height="120"></canvas>
+          </div>
+
+          <div class="chart-card">
+            <div class="chart-head">
+              <h3>分析結果</h3>
+              <span>ノート別サマリー</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Measure</th>
+                    <th>Beat</th>
+                    <th>Expected</th>
+                    <th>Observed</th>
+                    <th>Pitch</th>
+                    <th>Start Diff</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody id="note-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel advanced-panel" hidden>
+        <div hidden>
+          <button id="karaoke-play" type="button">karaoke-play</button>
+          <button id="karaoke-stop" type="button">karaoke-stop</button>
+          <button id="karaoke-home" type="button">karaoke-home</button>
+          <span id="mic-compare"></span>
+          <button id="practice-add" type="button">practice-add</button>
+          <button id="practice-sort" type="button">practice-sort</button>
+          <button id="generate-practice" type="button">generate-practice</button>
+        </div>
+
+        <div class="panel-head">
+          <h2>詳細設定</h2>
+          <p>必要な項目だけを使う前提で、編集や検証のための機能をまとめています。</p>
+        </div>
+
+        <label class="field">
+          <span>MusicXML ファイル</span>
+          <input id="musicxml-file" type="file" accept=".xml,.musicxml" />
+        </label>
+        <label class="field">
+          <span>MusicXML 直接入力</span>
+          <textarea id="musicxml-text" rows="8" spellcheck="false"></textarea>
+        </label>
+
+        <label class="field">
+          <span>MIDI ファイル</span>
+          <input id="midi-file-hidden" type="file" accept=".mid,.midi,audio/midi" />
+          <div class="hint" id="midi-exclude-status">MIDI 未読込</div>
+          <div class="midi-part-list" id="midi-part-list-hidden"></div>
+          <div class="actions">
+            <button class="button secondary" id="midi-auto-exclude" type="button">伴奏を自動除外</button>
+            <button class="button secondary" id="midi-use-score" type="button">選択パートを使う</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>PDF ファイル</span>
+          <input id="pdf-file" type="file" accept="application/pdf,.pdf" />
+        </label>
+        <label class="field">
+          <span>PDF 抽出テキスト</span>
+          <textarea id="pdf-text" rows="6" spellcheck="false"></textarea>
+        </label>
+        <div class="hint" id="pdf-summary">PDF 未解析</div>
+        <div class="pdf-preview-head">
+          <h3>PDF ページ候補</h3>
+          <span id="pdf-preview-status">未読み込み</span>
+        </div>
+        <div class="pdf-preview-list" id="pdf-preview-list"></div>
+        <label class="field">
+          <span>認識ログ</span>
+          <textarea id="pdf-recognition-log" rows="7" spellcheck="false"></textarea>
+        </label>
+        <label class="field">
+          <span>OCR 抽出テキスト</span>
+          <textarea id="pdf-ocr-text" rows="7" spellcheck="false"></textarea>
+        </label>
+        <label class="field">
+          <span>ボーカル抜き出し</span>
+          <textarea id="pdf-vocal-extract" rows="7" spellcheck="false"></textarea>
+        </label>
+        <div class="actions">
+          <button class="button secondary" id="save-pdf-verify" type="button">検証用に保存</button>
+          <button class="button secondary" id="clear-pdf-verify" type="button">検証欄をクリア</button>
+        </div>
+        <div class="actions">
+          <button class="button secondary" id="import-pdf" type="button">PDF を取り込む</button>
+          <button class="button secondary" id="parse-pdf-text" type="button">貼り付けテキストを解析</button>
+        </div>
+
+        <label class="field">
+          <span>練習データ JSON</span>
+          <textarea id="practice-json" rows="8" spellcheck="false"></textarea>
+        </label>
+        <div class="hint" id="practice-summary">練習データ未解析</div>
+        <div class="practice-editor">
+          <div class="practice-editor-head">
+            <h3>練習データ編集</h3>
+            <button class="button secondary" id="practice-refresh" type="button">JSON から再読込</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Measure</th>
+                  <th>Beat</th>
+                  <th>Pitch</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="practice-table"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="button primary" id="analyze" type="button">分析する</button>
+          <button class="button secondary" id="save-project" type="button">保存する</button>
+          <button class="button secondary" id="reset" type="button">初期化</button>
+        </div>
+
+        <label class="field">
+          <span>テイク評価</span>
+          <select id="take-rating">
+            <option value="5">5 - とても良い</option>
+            <option value="4">4 - 良い</option>
+            <option value="3" selected>3 - 普通</option>
+            <option value="2">2 - いまひとつ</option>
+            <option value="1">1 - 要改善</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>コメント</span>
+          <textarea id="take-comment" rows="3" spellcheck="false"></textarea>
+        </label>
+
+        <label class="field field-inline">
+          <span>音声+録音時の待ち時間</span>
+          <input type="range" min="0" max="100" value="80" />
+        </label>
+        <label class="field">
+          <span>無音検出のしきい値</span>
+          <input id="sync-delay" type="number" min="0" max="10" step="0.1" value="1.5" />
+        </label>
+        <div class="actions">
+          <button class="button secondary" id="sync-nudge-minus" type="button">-0.1s</button>
+          <button class="button secondary" id="sync-nudge-plus" type="button">+0.1s</button>
+          <button class="button secondary" id="sync-reset" type="button">補正リセット</button>
+        </div>
+        <div class="actions">
+          <button class="button secondary" id="refresh-projects" type="button">一覧を更新</button>
+          <button class="button secondary" id="clear-projects" type="button">全削除</button>
+          <button class="button secondary" id="refresh-takes" type="button">一覧を更新</button>
+          <button class="button secondary" id="clear-takes" type="button">全削除</button>
+        </div>
+        <div class="project-list" id="project-list"></div>
+        <div class="project-list" id="take-list"></div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

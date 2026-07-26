@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.git/
+.git-codex/
+.agents/
+.codex/
+server.*.log
+*.pyc
+
+# Local API experiments are not used by GitHub Pages.
+api.py
