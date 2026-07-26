@@ -453,8 +453,11 @@ function findAsciiTag(bytes, start, tag) {
 }
 
 function tickToSecondsFactory(tempoEvents, division) {
-  const sorted = [{ tick: 0, tempo: 500000 }, ...tempoEvents.filter((event) => Number.isFinite(event.tick) && Number.isFinite(event.tempo))];
-  sorted.sort((a, b) => a.tick - b.tick || a.tempo - b.tempo);
+  const realTempoEvents = tempoEvents
+    .filter((event) => Number.isFinite(event.tick) && Number.isFinite(event.tempo))
+    .map((event, index) => ({ ...event, order: index }));
+  const sorted = [{ tick: 0, tempo: 500000, order: -1 }, ...realTempoEvents];
+  sorted.sort((a, b) => a.tick - b.tick || a.order - b.order);
   const timeline = [];
   let lastTick = 0;
   let lastSeconds = 0;
