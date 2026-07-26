@@ -13,6 +13,7 @@
   pitchModel: document.getElementById("pitch-model"),
   graphScale: document.getElementById("graph-scale"),
   voiceThreshold: document.getElementById("voice-threshold"),
+  guideOffset: document.getElementById("guide-offset"),
   audioStatus: document.getElementById("audio-status"),
   audioProgress: document.getElementById("audio-progress"),
   audioNote: document.getElementById("audio-note"),
@@ -219,6 +220,11 @@ function getVoiceThresholdPreset() {
 function getGraphScale() {
   const scale = Number(els.graphScale?.value || 2);
   return Number.isFinite(scale) && scale > 0 ? scale : 2;
+}
+
+function getGuideDisplayOffsetSeconds() {
+  const value = Number(els.guideOffset?.value || 0);
+  return Number.isFinite(value) ? value / 1000 : 0;
 }
 
 function foldMidiToRange(midi, minMidi, maxMidi, anchor) {
@@ -1414,6 +1420,7 @@ function drawMicChart(history, expectedTarget) {
   const expectedMidi = Number.isFinite(expectedTarget) ? expectedTarget : null;
   const windowSeconds = 20 / getGraphScale();
   const liveClock = getGuideClockSeconds();
+  const guideDisplayOffset = getGuideDisplayOffsetSeconds();
   const centeredWindow = getCenteredWindow(liveClock, expectedTrack?.duration, windowSeconds);
   let windowStart = centeredWindow.start;
   let windowEnd = centeredWindow.end;
@@ -1440,10 +1447,14 @@ function drawMicChart(history, expectedTarget) {
   }
 
   if (expectedTrack?.notes?.length) {
-    const visibleNotes = expectedTrack.notes.filter((note) => note.end >= windowStart && note.start <= windowEnd);
+    const visibleNotes = expectedTrack.notes.filter((note) => {
+      const displayStart = note.start + guideDisplayOffset;
+      const displayEnd = note.end + guideDisplayOffset;
+      return displayEnd >= windowStart && displayStart <= windowEnd;
+    });
     visibleNotes.forEach((note, index) => {
-      const x1 = xForTime(note.start || 0);
-      const x2 = xForTime(note.end || note.start || 0);
+      const x1 = xForTime((note.start || 0) + guideDisplayOffset);
+      const x2 = xForTime((note.end || note.start || 0) + guideDisplayOffset);
       const y = yFor(note.pitch);
       ctx.save();
       const noteStrength = clamp((note.velocity ?? 80) / 127, 0.22, 1);
@@ -1454,7 +1465,9 @@ function drawMicChart(history, expectedTarget) {
       ctx.restore();
     });
     const currentNote = expectedTrack.notes.find((note) => {
-      return liveClock != null && liveClock >= note.start && liveClock <= note.end;
+      const displayStart = note.start + guideDisplayOffset;
+      const displayEnd = note.end + guideDisplayOffset;
+      return liveClock != null && liveClock >= displayStart && liveClock <= displayEnd;
     });
     if (currentNote) {
       const currentY = yFor(currentNote.pitch);
@@ -2068,6 +2081,7 @@ els.saveTake?.addEventListener("click", saveTake);
 els.voiceRange?.addEventListener("change", refreshMidiCharts);
 els.graphScale?.addEventListener("change", refreshMidiCharts);
 els.voiceThreshold?.addEventListener("change", refreshMidiCharts);
+els.guideOffset?.addEventListener("change", refreshMidiCharts);
 els.pitchModel?.addEventListener("change", refreshMidiCharts);
 els.midiPartList?.addEventListener("change", () => {
   selectMidiTrack(els.midiPartList.value);

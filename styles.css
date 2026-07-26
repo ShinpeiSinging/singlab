@@ -148,7 +148,7 @@ input[type="number"] {
 .graph-option-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   margin-top: 8px;
 }
@@ -164,10 +164,10 @@ input[type="number"] {
 
 .graph-option-row select {
   width: auto;
-  min-width: 84px;
+  min-width: 76px;
   border-radius: 12px;
-  padding: 7px 9px;
-  font-size: 0.86rem;
+  padding: 6px 8px;
+  font-size: 0.82rem;
 }
 
 .chart-card { padding: 16px; margin-top: 12px; }
