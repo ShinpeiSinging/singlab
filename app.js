@@ -56,7 +56,7 @@
 };
 
 const MIC_ANALYSIS_FFT_SIZE = 4096;
-const PITCH_VISUAL_LEAD_SECONDS = 0.055;
+const PITCH_DISPLAY_ALIGNMENT_SECONDS = 0.045;
 
 const demoMusicXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -252,6 +252,17 @@ function getCenteredWindow(currentTime, duration, windowSeconds = 20) {
     start = duration - windowSeconds;
   }
   return { start, end, center: safeTime };
+}
+
+function resetMicTrackingState({ clearHistory = false, resetClock = false } = {}) {
+  micState.samples = [];
+  micState.smoothedMidi = null;
+  micState.lastRawMidi = null;
+  micState.lastDisplayedMidi = null;
+  micState.pitchWindow = [];
+  micState.lastVoiceTime = 0;
+  if (clearHistory) micState.history = [];
+  if (resetClock) micState.captureClock = performance.now() / 1000;
 }
 
 function getExpectedMidiAtTime(track, time) {
@@ -946,6 +957,7 @@ function stopMidiPlayback() {
   } catch {}
   playback.playing = false;
   playback.startTime = 0;
+  playback.seekStartSeconds = 0;
   playback.positionSeconds = 0;
   playback.duration = 0;
   playback.notes = [];
@@ -974,9 +986,27 @@ function refreshMidiCharts() {
   renderMidiComparison();
 }
 
+function getMidiPlaybackPositionSeconds() {
+  const playback = midiState.playback;
+  const duration = Math.max(0.1, playback.duration || 0);
+  if (playback.playing && playback.sequencer) {
+    const sequencerTime = Number(playback.sequencer.currentTime);
+    if (Number.isFinite(sequencerTime)) {
+      playback.positionSeconds = clamp(sequencerTime, 0, duration);
+      return playback.positionSeconds;
+    }
+    if (playback.audioContext && Number.isFinite(playback.startTime)) {
+      const elapsed = playback.audioContext.currentTime - playback.startTime;
+      playback.positionSeconds = clamp((playback.seekStartSeconds || 0) + elapsed, 0, duration);
+      return playback.positionSeconds;
+    }
+  }
+  return clamp(playback.positionSeconds || 0, 0, duration);
+}
+
 function getGuideClockSeconds() {
   if (midiState.playback.playing) {
-    return midiState.playback.positionSeconds || 0;
+    return getMidiPlaybackPositionSeconds();
   }
   if (micState.captureClock) {
     return Math.max(0, performance.now() / 1000 - micState.captureClock);
@@ -993,6 +1023,8 @@ async function startPracticeSession() {
   if (!hasPlayableMidi) return;
   try {
     await playMidiTrack(midiState.playback.positionSeconds || 0);
+    resetMicTrackingState({ clearHistory: true });
+    refreshMidiCharts();
   } catch (error) {
     stopMic().catch(() => {});
     throw error;
@@ -1102,6 +1134,7 @@ async function playMidiTrack(startSeconds = 0) {
   playback.positionSeconds = clamp(startSeconds, 0, playback.duration);
   playback.playing = true;
   playback.startTime = playback.audioContext.currentTime;
+  playback.seekStartSeconds = playback.positionSeconds;
   playback.sequencer.currentTime = playback.positionSeconds;
   await Promise.resolve(playback.sequencer.play());
   logMidi(`再生開始: tracks=${tracks.length}, notes=${midiSequence.tracks?.reduce((sum, track) => sum + (track.notes?.length || 0), 0) || 0}, seek=${playback.positionSeconds.toFixed(2)}s`);
@@ -1112,8 +1145,7 @@ async function playMidiTrack(startSeconds = 0) {
   playback.timer = window.setInterval(() => {
     const seq = midiState.playback.sequencer;
     if (!seq || !midiState.playback.playing) return;
-    const position = seq.paused ? midiState.playback.positionSeconds : (seq.currentTime ?? midiState.playback.positionSeconds);
-    midiState.playback.positionSeconds = clamp(position, 0, midiState.playback.duration);
+    midiState.playback.positionSeconds = getMidiPlaybackPositionSeconds();
     updateMidiPlaybackUi(midiState.playback.positionSeconds);
     refreshMidiCharts();
     if (!seq.paused && midiState.playback.positionSeconds >= midiState.playback.duration - 0.03) {
@@ -1570,7 +1602,7 @@ function drawMicChart(history, expectedTarget) {
   if (latest && latest.strength >= thresholds.dot) {
     ctx.fillStyle = 'rgba(126,224,184,.95)';
     ctx.beginPath();
-    ctx.arc(nowX, latest.y, 7, 0, Math.PI * 2);
+    ctx.arc(latest.x, latest.y, 7, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -1619,6 +1651,7 @@ const midiState = {
     runtime: null,
     timer: null,
     startTime: 0,
+    seekStartSeconds: 0,
     positionSeconds: 0,
     duration: 0,
     notes: [],
@@ -1661,6 +1694,7 @@ function resetMidiPlaybackState() {
   clearMidiPlaybackTimer();
   midiState.playback.playing = false;
   midiState.playback.startTime = 0;
+  midiState.playback.seekStartSeconds = 0;
   midiState.playback.positionSeconds = 0;
   midiState.playback.duration = 0;
   midiState.playback.notes = [];
@@ -1774,14 +1808,8 @@ async function startMic() {
   micState.audioContext = audioContext;
   micState.analyser = analyser;
   micState.source = source;
-  micState.samples = [];
-  micState.history = [];
-  micState.smoothedMidi = null;
-  micState.lastRawMidi = null;
-  micState.lastDisplayedMidi = null;
-  micState.pitchWindow = [];
-  micState.lastVoiceTime = 0;
   micState.captureClock = performance.now() / 1000;
+  resetMicTrackingState({ clearHistory: true });
   setText(els.micStatus, "解析中");
 
   const buffer = new Float32Array(analyser.fftSize);
@@ -1790,9 +1818,9 @@ async function startMic() {
     micState.analyser.getFloatTimeDomainData(buffer);
     const { frequency, confidence, rms } = estimateFrequency(buffer, audioContext.sampleRate);
     const now = (performance.now() / 1000) - micState.captureClock;
-    const guideClock = midiState.playback.playing ? midiState.playback.positionSeconds : now;
+    const guideClock = midiState.playback.playing ? getMidiPlaybackPositionSeconds() : now;
     const analysisLatencySeconds = (analyser.fftSize / audioContext.sampleRate) * 0.5;
-    const historyTime = Math.max(0, guideClock - analysisLatencySeconds - PITCH_VISUAL_LEAD_SECONDS);
+    const historyTime = Math.max(0, guideClock - analysisLatencySeconds + PITCH_DISPLAY_ALIGNMENT_SECONDS);
     const thresholds = getVoiceThresholdPreset();
     const strongEnough = Number.isFinite(frequency) && confidence >= thresholds.confidence && rms >= thresholds.rms;
     if (strongEnough) {
@@ -2075,6 +2103,10 @@ els.midiSeek?.addEventListener("input", () => {
   const seekSeconds = duration * ratio;
   if (midiState.playback.playing && midiState.playback.sequencer) {
     midiState.playback.positionSeconds = seekSeconds;
+    midiState.playback.seekStartSeconds = seekSeconds;
+    if (midiState.playback.audioContext) {
+      midiState.playback.startTime = midiState.playback.audioContext.currentTime;
+    }
     midiState.playback.sequencer.currentTime = seekSeconds;
     midiState.playback.sequencer.play();
     updateMidiPlaybackUi(seekSeconds);
