@@ -9,3 +9,6 @@ server.*.log
 
 # Local API experiments are not used by GitHub Pages.
 api.py
+
+# Local publishing helper for this checkout.
+publish_to_github.ps1
