@@ -458,6 +458,20 @@ th { color: var(--muted); font-weight: 600; }
   justify-self: start;
 }
 
+.default-midi-field {
+  grid-template-columns: auto minmax(220px, 360px);
+  align-items: center;
+}
+
+.default-midi-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+}
+
 .midi-part-select {
   width: 100%;
   padding: 10px 12px;

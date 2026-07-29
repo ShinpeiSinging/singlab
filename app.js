@@ -35,6 +35,7 @@
   resultDuration: document.getElementById("result-duration"),
   resultTempoDiff: document.getElementById("result-tempo-diff"),
   midiFile: document.getElementById("midi-file"),
+  defaultMidi: document.getElementById("default-midi"),
   midiPartList: document.getElementById("midi-part-list"),
   midiExcludeStatus: document.getElementById("midi-exclude-status"),
   midiAutoExclude: document.getElementById("midi-auto-exclude"),
@@ -57,6 +58,19 @@
 };
 
 const MIC_ANALYSIS_FFT_SIZE = 4096;
+
+const defaultMidiSongs = {
+  shiawase: {
+    title: "幸せをつかむため",
+    fileName: "幸せをつかむため.mid",
+    url: "./assets/midi/shiawase-wo-tsukamu-tame.mid",
+  },
+  kaeritai: {
+    title: "帰りたい",
+    fileName: "帰りたい.mid",
+    url: "./assets/midi/kaeritai.mid",
+  },
+};
 
 const demoMusicXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -1506,22 +1520,6 @@ function drawMicChart(history, expectedTarget) {
       ctx.fill();
       ctx.restore();
     });
-    const currentNote = expectedTrack.notes.find((note) => {
-      const displayStart = note.start + guideDisplayOffset;
-      const displayEnd = note.end + guideDisplayOffset;
-      return liveClock != null && liveClock >= displayStart && liveClock <= displayEnd;
-    });
-    if (currentNote) {
-      const currentY = yFor(currentNote.pitch);
-      ctx.strokeStyle = 'rgba(126,224,184,.96)';
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(48, currentY);
-      ctx.lineTo(cssWidth - 24, currentY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
   } else if (expectedMidi != null) {
     const expectedY = yFor(expectedMidi);
     ctx.strokeStyle = 'rgba(126,224,184,.92)';
@@ -1661,19 +1659,6 @@ function drawMicChart(history, expectedTarget) {
     ctx.fill();
   }
 
-  if (!points.length && expectedTrack?.notes?.length) {
-    const guidePoint = expectedTrack.notes.find((note) => liveClock >= note.start && liveClock <= note.end) || expectedTrack.notes.find((note) => note.start <= liveClock) || expectedTrack.notes[0];
-    if (guidePoint) {
-      const guideY = yFor(guidePoint.pitch);
-      ctx.strokeStyle = 'rgba(126,224,184,.48)';
-      ctx.setLineDash([5, 7]);
-      ctx.beginPath();
-      ctx.moveTo(48, guideY);
-      ctx.lineTo(cssWidth - 24, guideY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-  }
 }
 const micState = {
   stream: null,
@@ -2159,6 +2144,32 @@ async function loadMidiFile(file) {
   }
 }
 
+async function loadDefaultMidiSong(songId) {
+  const song = defaultMidiSongs[songId];
+  if (!song) return;
+  stopMidiPlayback();
+  resetMidiDebugLog();
+  setText(els.midiExcludeStatus, `読み込み中: ${song.title}`);
+  setText(els.midiTopStatus, "読み込み中");
+  setText(els.midiTopSelected, `デフォルト曲: ${song.title}`);
+  try {
+    const response = await fetch(song.url, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`デフォルト曲が見つかりません: ${song.url} (${response.status})`);
+    }
+    const blob = await response.blob();
+    const file = new File([blob], song.fileName, { type: "audio/midi" });
+    await loadMidiFile(file);
+    setText(els.midiTopSelected, `デフォルト曲: ${song.title}`);
+  } catch (error) {
+    setText(els.midiExcludeStatus, error.message);
+    setText(els.midiTopStatus, "読込失敗");
+    setText(els.midiTopSelected, "デフォルト曲を配置してください");
+    logMidi(error.message);
+    throw error;
+  }
+}
+
 function saveTake() {
   if (!micState.history.length) return;
   latestTake = {
@@ -2250,6 +2261,13 @@ els.midiFile?.addEventListener("input", () => {
   setText(els.midiExcludeStatus, `選択中: ${file.name}`);
   setText(els.midiTopStatus, "読み込み中");
   setText(els.midiTopSelected, `選択中ファイル: ${file.name}`);
+});
+els.defaultMidi?.addEventListener("change", () => {
+  const songId = els.defaultMidi.value;
+  if (!songId) return;
+  loadDefaultMidiSong(songId).catch((error) => {
+    alert(error.message);
+  });
 });
 els.metronomeToggle?.addEventListener("click", toggleMetronome);
 els.saveTake?.addEventListener("click", saveTake);

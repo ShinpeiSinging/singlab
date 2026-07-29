@@ -28,6 +28,15 @@
               <input id="midi-file" type="file" accept=".mid,.midi,audio/midi" />
             </label>
 
+            <label class="field default-midi-field">
+              <span>デフォルト曲</span>
+              <select id="default-midi" class="default-midi-select">
+                <option value="">選択してください</option>
+                <option value="shiawase">幸せをつかむため</option>
+                <option value="kaeritai">帰りたい</option>
+              </select>
+            </label>
+
             <label class="field legacy-voice-range">
               <span>音域</span>
               <select id="voice-range-legacy" class="voice-range-select">
@@ -121,15 +130,27 @@
                 <label>
                   <span>お手本補正</span>
                   <select id="guide-offset" class="graph-option-select">
+                    <option value="-500">早める 500ms</option>
+                    <option value="-400">早める 400ms</option>
+                    <option value="-300">早める 300ms</option>
+                    <option value="-250">早める 250ms</option>
                     <option value="-200">早める 200ms</option>
                     <option value="-150">早める 150ms</option>
                     <option value="-100">早める 100ms</option>
+                    <option value="-75">早める 75ms</option>
                     <option value="-50">早める 50ms</option>
+                    <option value="-25">早める 25ms</option>
                     <option value="0" selected>0ms</option>
+                    <option value="25">遅らせる 25ms</option>
                     <option value="50">遅らせる 50ms</option>
+                    <option value="75">遅らせる 75ms</option>
                     <option value="100">遅らせる 100ms</option>
                     <option value="150">遅らせる 150ms</option>
                     <option value="200">遅らせる 200ms</option>
+                    <option value="250">遅らせる 250ms</option>
+                    <option value="300">遅らせる 300ms</option>
+                    <option value="400">遅らせる 400ms</option>
+                    <option value="500">遅らせる 500ms</option>
                   </select>
                 </label>
                 <label>
