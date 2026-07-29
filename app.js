@@ -956,6 +956,15 @@ function renderMidiComparison() {
 function stopMidiPlayback() {
   const playback = midiState.playback;
   clearMidiPlaybackTimer();
+  (playback.scheduledNodes || []).forEach((node) => {
+    try {
+      node.stop?.(0);
+    } catch {}
+    try {
+      node.disconnect?.();
+    } catch {}
+  });
+  playback.scheduledNodes = [];
   try {
     playback.sequencer?.pause();
     if (playback.sequencer) playback.sequencer.currentTime = 0;
@@ -997,15 +1006,14 @@ function refreshMidiCharts() {
 function getMidiPlaybackPositionSeconds() {
   const playback = midiState.playback;
   const duration = Math.max(0.1, playback.duration || 0);
+  if (playback.playing && playback.audioContext && Number.isFinite(playback.startTime)) {
+    playback.positionSeconds = clamp(playback.audioContext.currentTime - playback.startTime, 0, duration);
+    return playback.positionSeconds;
+  }
   if (playback.playing && playback.sequencer) {
     const sequencerTime = Number(playback.sequencer.currentTime);
     if (Number.isFinite(sequencerTime)) {
       playback.positionSeconds = clamp(sequencerTime, 0, duration);
-      return playback.positionSeconds;
-    }
-    if (playback.audioContext && Number.isFinite(playback.startTime)) {
-      const elapsed = playback.audioContext.currentTime - playback.startTime;
-      playback.positionSeconds = clamp((playback.seekStartSeconds || 0) + elapsed, 0, duration);
       return playback.positionSeconds;
     }
   }
@@ -1125,6 +1133,23 @@ function playMidiVoice(audioContext, destination, note, startTime, endTime, trac
     osc.start(safeStart);
     osc.stop(safeEnd + 0.15);
   });
+  return oscillators;
+}
+
+async function ensureLocalMidiPlaybackContext() {
+  const playback = midiState.playback;
+  if (!playback.audioContext) {
+    playback.audioContext = new AudioContext({ sampleRate: 44100 });
+  }
+  if (playback.audioContext.state === "suspended") {
+    await playback.audioContext.resume();
+  }
+  if (!playback.masterGain) {
+    playback.masterGain = playback.audioContext.createGain();
+    playback.masterGain.connect(playback.audioContext.destination);
+  }
+  playback.masterGain.gain.value = Math.max(0.001, updateMidiVolumeUi());
+  return playback;
 }
 
 async function playMidiTrack(startSeconds = 0) {
@@ -1134,29 +1159,35 @@ async function playMidiTrack(startSeconds = 0) {
     return;
   }
   stopMidiPlayback();
-  const playback = await ensureMidiRuntime();
-  const { BasicMIDI } = playback.runtime;
-  const midiSequence = BasicMIDI.fromArrayBuffer(midiState.midiBuffer);
-  await Promise.resolve(playback.sequencer.loadNewSongList([midiSequence]));
+  const playback = await ensureLocalMidiPlaybackContext();
   playback.duration = Math.max(0.1, ...(tracks || []).map((track) => track.duration || 0));
   playback.positionSeconds = clamp(startSeconds, 0, playback.duration);
   playback.playing = true;
-  playback.startTime = playback.audioContext.currentTime;
+  const audioStart = playback.audioContext.currentTime + 0.06;
+  playback.startTime = audioStart - playback.positionSeconds;
   playback.seekStartSeconds = playback.positionSeconds;
-  playback.sequencer.currentTime = playback.positionSeconds;
-  await Promise.resolve(playback.sequencer.play());
-  logMidi(`再生開始: tracks=${tracks.length}, notes=${midiSequence.tracks?.reduce((sum, track) => sum + (track.notes?.length || 0), 0) || 0}, seek=${playback.positionSeconds.toFixed(2)}s`);
+  playback.notes = tracks.flatMap((track) => track.notes || []);
+  playback.scheduledNodes = [];
+  tracks.forEach((track, trackIndex) => {
+    (track.notes || []).forEach((note) => {
+      if ((note.end ?? 0) < playback.positionSeconds) return;
+      const startTime = audioStart + Math.max(0, (note.start ?? 0) - playback.positionSeconds);
+      const endTime = audioStart + Math.max(0.04, (note.end ?? note.start ?? 0) - playback.positionSeconds);
+      const nodes = playMidiVoice(playback.audioContext, playback.masterGain, note, startTime, endTime, tracks.length, trackIndex, updateMidiVolumeUi());
+      playback.scheduledNodes.push(...nodes);
+    });
+  });
+  logMidi(`同期再生開始: tracks=${tracks.length}, notes=${playback.notes.length}, seek=${playback.positionSeconds.toFixed(2)}s`);
   if (els.midiPlay) els.midiPlay.textContent = "再生中";
   updateMidiPlaybackUi(playback.positionSeconds);
 
   clearMidiPlaybackTimer();
   playback.timer = window.setInterval(() => {
-    const seq = midiState.playback.sequencer;
-    if (!seq || !midiState.playback.playing) return;
+    if (!midiState.playback.playing) return;
     midiState.playback.positionSeconds = getMidiPlaybackPositionSeconds();
     updateMidiPlaybackUi(midiState.playback.positionSeconds);
     refreshMidiCharts();
-    if (!seq.paused && midiState.playback.positionSeconds >= midiState.playback.duration - 0.03) {
+    if (midiState.playback.positionSeconds >= midiState.playback.duration - 0.03) {
       stopMidiPlayback();
     }
   }, 50);
@@ -1670,6 +1701,7 @@ const midiState = {
     positionSeconds: 0,
     duration: 0,
     notes: [],
+    scheduledNodes: [],
     playing: false,
   },
 };
@@ -2149,14 +2181,13 @@ els.midiSeek?.addEventListener("input", () => {
   if (!duration) return;
   const ratio = Number(els.midiSeek.value) / 100;
   const seekSeconds = duration * ratio;
-  if (midiState.playback.playing && midiState.playback.sequencer) {
+  if (midiState.playback.playing) {
     midiState.playback.positionSeconds = seekSeconds;
     midiState.playback.seekStartSeconds = seekSeconds;
-    if (midiState.playback.audioContext) {
-      midiState.playback.startTime = midiState.playback.audioContext.currentTime;
-    }
-    midiState.playback.sequencer.currentTime = seekSeconds;
-    midiState.playback.sequencer.play();
+    playMidiTrack(seekSeconds).catch((error) => {
+      setText(els.micStatus, error.message);
+      alert(error.message);
+    });
     updateMidiPlaybackUi(seekSeconds);
   } else {
     midiState.playback.positionSeconds = seekSeconds;
