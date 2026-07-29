@@ -484,6 +484,66 @@ function tickToSecondsFactory(tempoEvents, division) {
   };
 }
 
+function normalizeParsedTracks(tracks) {
+  return tracks.map((track) => {
+    const notes = (track.notes || [])
+      .filter((note) => Number.isFinite(note.pitch) && Number.isFinite(note.start) && Number.isFinite(note.end))
+      .map((note) => ({
+        ...note,
+        duration: Math.max(0.02, (note.end ?? note.start) - note.start),
+      }))
+      .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+    const pitches = notes.map((note) => note.pitch);
+    const durations = notes.map((note) => note.duration);
+    const dominantProgram = (() => {
+      const counts = new Map();
+      for (const note of notes) {
+        const program = Number.isFinite(note.program) ? note.program : 0;
+        counts.set(program, (counts.get(program) || 0) + 1);
+      }
+      return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+    })();
+    const range = pitches.length ? Math.max(...pitches) - Math.min(...pitches) : 0;
+    const monoRatio = notes.length
+      ? notes.reduce((count, note) => count + (note.velocity < 80 ? 1 : 0), 0) / notes.length
+      : 0;
+    return {
+      ...track,
+      notes,
+      duration: notes.length ? Math.max(...notes.map((note) => note.end)) : 0,
+      range,
+      monoRatio,
+      dominantProgram,
+      instrumentSummary: createTrackSummary({ notes }),
+      score: notes.length + (/(vocal|voice|lead|melody|soprano|alto|tenor|bass)/i.test(track.name) ? 40 : 0) + (range <= 36 ? 10 : 0),
+      averagePitch: pitches.length ? pitches.reduce((sum, value) => sum + value, 0) / pitches.length : null,
+      averageDuration: durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : null,
+    };
+  });
+}
+
+function totalNoteCount(tracks = []) {
+  return tracks.reduce((sum, track) => sum + (track.notes?.length || 0), 0);
+}
+
+function maxTrackDuration(tracks = []) {
+  return Math.max(0, ...tracks.map((track) => track.duration || 0));
+}
+
+function isPlausibleGuideReplacement(candidateTracks, fallbackTracks) {
+  const candidateNotes = totalNoteCount(candidateTracks);
+  if (candidateNotes <= 0) return false;
+  const fallbackNotes = totalNoteCount(fallbackTracks);
+  if (fallbackNotes > 0 && candidateNotes < fallbackNotes * 0.5) return false;
+  const candidateDuration = maxTrackDuration(candidateTracks);
+  const fallbackDuration = maxTrackDuration(fallbackTracks);
+  if (fallbackDuration > 0 && candidateDuration > 0) {
+    const ratio = candidateDuration / fallbackDuration;
+    if (ratio < 0.5 || ratio > 2) return false;
+  }
+  return true;
+}
+
 function parseMidiFile(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
   const view = new DataView(arrayBuffer);
@@ -618,42 +678,14 @@ function parseMidiFile(arrayBuffer) {
   }
 
   const tickToSeconds = tickToSecondsFactory(tempoEvents, division);
-  const normalizedTracks = tracks.map((track) => {
-    const notes = track.notes
-      .map((note) => ({
-        ...note,
-        start: tickToSeconds(note.startTick),
-        end: tickToSeconds(note.endTick),
-        duration: Math.max(0.02, tickToSeconds(note.endTick) - tickToSeconds(note.startTick)),
-      }))
-      .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
-    const pitches = notes.map((note) => note.pitch);
-    const durations = notes.map((note) => note.duration);
-    const dominantProgram = (() => {
-      const counts = new Map();
-      for (const note of notes) {
-        const program = Number.isFinite(note.program) ? note.program : 0;
-        counts.set(program, (counts.get(program) || 0) + 1);
-      }
-      return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
-    })();
-    const range = pitches.length ? Math.max(...pitches) - Math.min(...pitches) : 0;
-    const monoRatio = notes.length
-      ? notes.reduce((count, note) => count + (note.velocity < 80 ? 1 : 0), 0) / notes.length
-      : 0;
-    return {
-      ...track,
-      notes,
-      duration: notes.length ? Math.max(...notes.map((note) => note.end)) : 0,
-      range,
-      monoRatio,
-      dominantProgram,
-      instrumentSummary: createTrackSummary({ notes }),
-      score: notes.length + (/(vocal|voice|lead|melody|soprano|alto|tenor|bass)/i.test(track.name) ? 40 : 0) + (range <= 36 ? 10 : 0),
-      averagePitch: pitches.length ? pitches.reduce((sum, value) => sum + value, 0) / pitches.length : null,
-      averageDuration: durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : null,
-    };
-  });
+  const normalizedTracks = normalizeParsedTracks(tracks.map((track) => ({
+    ...track,
+    notes: track.notes.map((note) => ({
+      ...note,
+      start: tickToSeconds(note.startTick),
+      end: tickToSeconds(note.endTick),
+    })),
+  })));
 
   return { format, division, tempoEvents, tracks: normalizedTracks, tickToSeconds };
 }
@@ -1769,6 +1801,90 @@ function describeRuntimeValue(value, depth = 0) {
   return `own=[${ownKeys.join(", ")}] proto=[${protoKeys.join(", ")}]`;
 }
 
+function firstFiniteValue(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
+function callRuntimeTimeConverter(basicMidi, tick) {
+  for (const fnName of ["midiTicksToSeconds", "ticksToSeconds", "tickToSeconds"]) {
+    const fn = basicMidi?.[fnName];
+    if (typeof fn !== "function") continue;
+    try {
+      const seconds = Number(fn.call(basicMidi, tick));
+      if (Number.isFinite(seconds)) return seconds;
+    } catch {}
+  }
+  return null;
+}
+
+function extractNoteFromRuntimeNote(note, basicMidi, fallbackTrack, index) {
+  const pitch = firstFiniteValue(
+    note?.pitch,
+    note?.midi,
+    note?.midiNote,
+    note?.note,
+    note?.key,
+    note?.noteNumber,
+    note?.number,
+  );
+  if (!Number.isFinite(pitch)) return null;
+
+  let start = firstFiniteValue(note?.start, note?.startTime, note?.time, note?.seconds, note?.absoluteTime, note?.startSeconds);
+  let end = firstFiniteValue(note?.end, note?.endTime, note?.stopTime, note?.endSeconds);
+  const duration = firstFiniteValue(note?.duration, note?.length, note?.secondsLength);
+  const startTick = firstFiniteValue(note?.startTick, note?.tick, note?.ticks, note?.absoluteTick);
+  const endTick = firstFiniteValue(note?.endTick, note?.stopTick, note?.offTick);
+
+  if (start == null && startTick != null) {
+    start = callRuntimeTimeConverter(basicMidi, startTick);
+  }
+  if (end == null && endTick != null) {
+    end = callRuntimeTimeConverter(basicMidi, endTick);
+  }
+  if (end == null && start != null && duration != null) {
+    end = start + duration;
+  }
+  if (start == null || end == null || end <= start) return null;
+
+  return {
+    pitch,
+    velocity: firstFiniteValue(note?.velocity, note?.vel, note?.volume) ?? 80,
+    program: firstFiniteValue(note?.program, note?.instrument, fallbackTrack?.dominantProgram) ?? 0,
+    channel: firstFiniteValue(note?.channel, note?.midiChannel) ?? 0,
+    start,
+    end,
+    startTick: startTick ?? undefined,
+    endTick: endTick ?? undefined,
+    sourceIndex: index,
+  };
+}
+
+async function extractBasicMidiGuideTracks(arrayBuffer, fallbackTracks = []) {
+  const { BasicMIDI } = await loadMidiRuntime();
+  const basicMidi = BasicMIDI.fromArrayBuffer(arrayBuffer.slice(0));
+  const runtimeTracks = Array.isArray(basicMidi?.tracks) ? basicMidi.tracks : [];
+  const extracted = runtimeTracks.map((track, index) => {
+    const runtimeNotes = Array.isArray(track?.notes) ? track.notes : [];
+    const fallbackTrack = fallbackTracks[index] || {};
+    const notes = runtimeNotes
+      .map((note, noteIndex) => extractNoteFromRuntimeNote(note, basicMidi, fallbackTrack, noteIndex))
+      .filter(Boolean);
+    return {
+      id: `${index}`,
+      index,
+      name: track?.name || track?.trackName || fallbackTrack.name || `Track ${index + 1}`,
+      notes,
+      guideSource: "BasicMIDI",
+    };
+  });
+  const normalized = normalizeParsedTracks(extracted).filter((track) => track.notes.length);
+  return { tracks: normalized, basicMidi };
+}
+
 async function inspectBasicMidiForGuideSource(arrayBuffer) {
   try {
     const { BasicMIDI } = await loadMidiRuntime();
@@ -1985,11 +2101,23 @@ async function loadMidiFile(file) {
     midiState.midiBuffer = arrayBuffer.slice(0);
     const parsed = parseMidiFile(arrayBuffer);
     inspectBasicMidiForGuideSource(arrayBuffer).catch((error) => logMidi(`BasicMIDI検査失敗: ${error.message}`));
+    let guideTracks = parsed.tracks;
+    try {
+      const extracted = await extractBasicMidiGuideTracks(arrayBuffer, parsed.tracks);
+      if (isPlausibleGuideReplacement(extracted.tracks, parsed.tracks)) {
+        guideTracks = extracted.tracks;
+        logMidi(`描画ソース: BasicMIDI (${guideTracks.length}トラック)`);
+      } else {
+        logMidi("描画ソース: 自前パーサー (BasicMIDI抽出は不採用)");
+      }
+    } catch (error) {
+      logMidi(`描画ソース: 自前パーサー (BasicMIDI抽出失敗: ${error.message})`);
+    }
     midiState.file = file;
     midiState.parsed = parsed;
-    midiState.tracks = parsed.tracks;
-    midiState.selectedTrackId = parsed.tracks[0]?.id || null;
-    if (!parsed.tracks.length) {
+    midiState.tracks = guideTracks;
+    midiState.selectedTrackId = guideTracks[0]?.id || null;
+    if (!guideTracks.length) {
       setText(els.midiExcludeStatus, "MIDI は読めましたが、音符が見つかりませんでした");
       setText(els.midiTopStatus, "読込済み");
       setText(els.midiTopSelected, "トラック未選択");
@@ -1998,10 +2126,10 @@ async function loadMidiFile(file) {
       refreshMidiCharts();
       return;
     }
-    logMidi(`解析成功: ${parsed.tracks.length}トラック, 先頭=${parsed.tracks[0]?.name || "?"}`);
+    logMidi(`解析成功: ${guideTracks.length}トラック, 先頭=${guideTracks[0]?.name || "?"}`);
     renderMidiTrackList();
     refreshMidiCharts();
-    setText(els.midiTopStatus, `読込済み (${parsed.tracks.length}トラック)`);
+    setText(els.midiTopStatus, `読込済み (${guideTracks.length}トラック)`);
   } catch (error) {
     midiState.file = null;
     midiState.midiBuffer = null;
