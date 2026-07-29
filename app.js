@@ -57,7 +57,6 @@
 };
 
 const MIC_ANALYSIS_FFT_SIZE = 4096;
-const SCORE_DISPLAY_DELAY_SECONDS = 0.5;
 
 const demoMusicXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -1026,12 +1025,6 @@ function getGuideClockSeconds() {
   return 0;
 }
 
-function getScoreRenderClockSeconds() {
-  const clock = getGuideClockSeconds();
-  if (!midiState.playback.playing) return clock;
-  return Math.max(0, clock - SCORE_DISPLAY_DELAY_SECONDS);
-}
-
 async function startPracticeSession() {
   await startMic();
   const hasPlayableMidi = (midiState.tracks || []).some((track) => track?.notes?.length);
@@ -1428,7 +1421,7 @@ function drawMicChart(history, expectedTarget) {
     : (selectedTrack && Array.isArray(selectedTrack.notes) ? selectedTrack : null);
   const expectedMidi = Number.isFinite(expectedTarget) ? expectedTarget : null;
   const windowSeconds = 20 / getGraphScale();
-  const liveClock = getScoreRenderClockSeconds();
+  const liveClock = getGuideClockSeconds();
   const guideDisplayOffset = getGuideDisplayOffsetSeconds();
   const centeredWindow = getCenteredWindow(liveClock, expectedTrack?.duration, windowSeconds);
   let windowStart = centeredWindow.start;
@@ -1510,7 +1503,7 @@ function drawMicChart(history, expectedTarget) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const samples = valid.filter((item) => item.time >= windowStart - 0.4 && item.time <= Math.min(windowEnd + 0.2, liveClock + 0.05));
+  const samples = valid.filter((item) => item.time >= windowStart - 0.4 && item.time <= windowEnd + 0.2);
   let lastDisplayMidi = Number.isFinite(micState.lastDisplayedMidi) ? micState.lastDisplayedMidi : null;
   const points = [];
   for (const item of samples) {
