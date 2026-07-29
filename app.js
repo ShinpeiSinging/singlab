@@ -1030,6 +1030,14 @@ function getMidiPlaybackPositionSeconds() {
   const playback = midiState.playback;
   const duration = Math.max(0.1, playback.duration || 0);
   if (playback.playing && playback.sequencer) {
+    let highResolutionTime = Number(playback.sequencer.currentHighResolutionTime);
+    if (Number.isFinite(highResolutionTime) && highResolutionTime > duration * 4 && highResolutionTime / 1000 <= duration * 1.25) {
+      highResolutionTime /= 1000;
+    }
+    if (Number.isFinite(highResolutionTime)) {
+      playback.positionSeconds = clamp(highResolutionTime, 0, duration);
+      return playback.positionSeconds;
+    }
     const sequencerTime = Number(playback.sequencer.currentTime);
     if (Number.isFinite(sequencerTime)) {
       playback.positionSeconds = clamp(sequencerTime, 0, duration);
@@ -1780,13 +1788,18 @@ async function ensureMidiRuntime() {
     soundBank = BasicSoundBank.getSampleSoundBankFile();
   }
   await synth.soundBankManager.addSoundBank(soundBank, "main");
-  const sequencer = new Sequencer(synth);
+  const sequencer = new Sequencer(synth, {
+    // Keep the MIDI timeline intact. The default skips leading silence, which
+    // makes audio start earlier than guide bars for files with an intro gap.
+    skipToFirstNoteOn: false,
+  });
+  sequencer.skipToFirstNoteOn = false;
   playback.audioContext = audioContext;
   playback.masterGain = masterGain;
   playback.synth = synth;
   playback.sequencer = sequencer;
   playback.runtime = { BasicMIDI };
-  logMidi("SpessaSynth を初期化しました");
+  logMidi("SpessaSynth を初期化しました (先頭無音スキップなし)");
   return playback;
 }
 
