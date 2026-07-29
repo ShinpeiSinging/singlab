@@ -1758,6 +1758,37 @@ async function ensureMidiRuntime() {
   return playback;
 }
 
+function describeRuntimeValue(value, depth = 0) {
+  if (value == null) return String(value);
+  if (depth > 1) return typeof value;
+  if (Array.isArray(value)) return `Array(${value.length})`;
+  if (ArrayBuffer.isView(value)) return `${value.constructor?.name || "TypedArray"}(${value.length})`;
+  if (typeof value !== "object") return `${typeof value}:${String(value).slice(0, 40)}`;
+  const ownKeys = Object.keys(value).slice(0, 12);
+  const protoKeys = Object.getOwnPropertyNames(Object.getPrototypeOf(value) || {}).filter((key) => key !== "constructor").slice(0, 12);
+  return `own=[${ownKeys.join(", ")}] proto=[${protoKeys.join(", ")}]`;
+}
+
+async function inspectBasicMidiForGuideSource(arrayBuffer) {
+  try {
+    const { BasicMIDI } = await loadMidiRuntime();
+    const basicMidi = BasicMIDI.fromArrayBuffer(arrayBuffer.slice(0));
+    const tracks = Array.isArray(basicMidi?.tracks) ? basicMidi.tracks : [];
+    logMidi(`BasicMIDI検査: ${describeRuntimeValue(basicMidi)}, tracks=${tracks.length}`);
+    tracks.slice(0, 4).forEach((track, index) => {
+      const events = Array.isArray(track?.events) ? track.events : [];
+      const notes = Array.isArray(track?.notes) ? track.notes : [];
+      const firstEvent = events[0];
+      const firstNote = notes[0];
+      logMidi(`BasicMIDI Track ${index + 1}: ${describeRuntimeValue(track)}, events=${events.length}, notes=${notes.length}`);
+      if (firstEvent) logMidi(`  event: ${describeRuntimeValue(firstEvent)}`);
+      if (firstNote) logMidi(`  note: ${describeRuntimeValue(firstNote)}`);
+    });
+  } catch (error) {
+    logMidi(`BasicMIDI検査失敗: ${error.message}`);
+  }
+}
+
 let audioPlayback = { element: null, url: null };
 let metronomeState = { enabled: false, timer: null, audioContext: null };
 let audioSyncAdjustment = 0;
@@ -1953,6 +1984,7 @@ async function loadMidiFile(file) {
     const arrayBuffer = await file.arrayBuffer();
     midiState.midiBuffer = arrayBuffer.slice(0);
     const parsed = parseMidiFile(arrayBuffer);
+    inspectBasicMidiForGuideSource(arrayBuffer).catch((error) => logMidi(`BasicMIDI検査失敗: ${error.message}`));
     midiState.file = file;
     midiState.parsed = parsed;
     midiState.tracks = parsed.tracks;
