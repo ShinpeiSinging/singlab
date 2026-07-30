@@ -14,6 +14,7 @@
   graphScale: document.getElementById("graph-scale"),
   voiceThreshold: document.getElementById("voice-threshold"),
   guideOffset: document.getElementById("guide-offset"),
+  guideOctave: document.getElementById("guide-octave"),
   audioStatus: document.getElementById("audio-status"),
   audioProgress: document.getElementById("audio-progress"),
   audioNote: document.getElementById("audio-note"),
@@ -240,6 +241,34 @@ function getGuideDisplayOffsetSeconds() {
   return Number.isFinite(value) ? value / 1000 : 0;
 }
 
+function getGuideOctaveShiftSemitones(track, minMidi, maxMidi) {
+  const setting = els.guideOctave?.value || "auto";
+  if (setting !== "auto") {
+    const semitones = Number(setting);
+    return Number.isFinite(semitones) ? semitones : 0;
+  }
+  const notes = (track?.notes || []).filter((note) => Number.isFinite(note.pitch));
+  if (!notes.length) return 0;
+  const center = (minMidi + maxMidi) / 2;
+  let bestShift = 0;
+  let bestScore = -Infinity;
+  for (const shift of [-24, -12, 0, 12, 24]) {
+    let inside = 0;
+    let distance = 0;
+    for (const note of notes) {
+      const pitch = note.pitch + shift;
+      if (pitch >= minMidi && pitch <= maxMidi) inside += 1;
+      distance += Math.abs(pitch - center);
+    }
+    const score = inside * 1000 - distance / notes.length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestShift = shift;
+    }
+  }
+  return bestShift;
+}
+
 function foldMidiToRange(midi, minMidi, maxMidi, anchor) {
   if (!Number.isFinite(midi)) return midi;
   if (!Number.isFinite(minMidi) || !Number.isFinite(maxMidi)) return midi;
@@ -304,6 +333,12 @@ function getExpectedMidiAtTime(track, time) {
     return previousDistance <= nextDistance ? previous.pitch : next.pitch;
   }
   return previous?.pitch ?? next?.pitch ?? notes[0].pitch ?? null;
+}
+
+function getDisplayedGuideMidiAtTime(track, time, minMidi, maxMidi) {
+  const baseMidi = getExpectedMidiAtTime(track, time);
+  if (!Number.isFinite(baseMidi)) return null;
+  return baseMidi + getGuideOctaveShiftSemitones(track, minMidi, maxMidi);
 }
 
 function pickOctaveEquivalent(midi, referenceMidi, minMidi, maxMidi, previousMidi = null) {
@@ -1477,6 +1512,7 @@ function drawMicChart(history, expectedTarget) {
   const windowSeconds = 20 / getGraphScale();
   const liveClock = getGuideClockSeconds();
   const guideDisplayOffset = getGuideDisplayOffsetSeconds();
+  const guideOctaveShift = expectedTrack ? getGuideOctaveShiftSemitones(expectedTrack, minMidi, maxMidi) : 0;
   const centeredWindow = getCenteredWindow(liveClock, expectedTrack?.duration, windowSeconds);
   let windowStart = centeredWindow.start;
   let windowEnd = centeredWindow.end;
@@ -1511,7 +1547,7 @@ function drawMicChart(history, expectedTarget) {
     visibleNotes.forEach((note, index) => {
       const x1 = xForTime((note.start || 0) + guideDisplayOffset);
       const x2 = xForTime((note.end || note.start || 0) + guideDisplayOffset);
-      const y = yFor(note.pitch);
+      const y = yFor(note.pitch + guideOctaveShift);
       ctx.save();
       const noteStrength = clamp((note.velocity ?? 80) / 127, 0.22, 1);
       ctx.fillStyle = `rgba(126,224,184,${0.22 + noteStrength * 0.42})`;
@@ -1546,9 +1582,7 @@ function drawMicChart(history, expectedTarget) {
   const points = [];
   for (const item of samples) {
     const rawMidi = Number(item.rawMidi ?? item.midi);
-    const guideMidi = Number.isFinite(item.displayMidi)
-      ? item.displayMidi
-      : (expectedTrack ? getExpectedMidiAtTime(expectedTrack, item.time) : null);
+    const guideMidi = expectedTrack ? getDisplayedGuideMidiAtTime(expectedTrack, item.time, minMidi, maxMidi) : null;
     const fallbackReference = Number.isFinite(guideMidi) ? guideMidi : (Number.isFinite(lastDisplayMidi) ? lastDisplayMidi : preset.center);
     const displayMidi = Number.isFinite(item.displayMidi)
       ? item.displayMidi
@@ -1985,10 +2019,10 @@ async function startMic() {
     const strongEnough = Number.isFinite(frequency) && confidence >= thresholds.confidence && rms >= thresholds.rms;
     if (strongEnough) {
       const rawMidi = 69 + 12 * Math.log2(frequency / 440);
-      const previousDisplay = Number.isFinite(micState.lastDisplayedMidi) ? micState.lastDisplayedMidi : (Number.isFinite(micState.smoothedMidi) ? micState.smoothedMidi : rawMidi);
-      const expectedReference = getExpectedMidiAtTime(getSelectedMidiTrack(), historyTime);
-      const displayReference = expectedReference ?? previousDisplay;
       const range = getVoiceRangePreset();
+      const previousDisplay = Number.isFinite(micState.lastDisplayedMidi) ? micState.lastDisplayedMidi : (Number.isFinite(micState.smoothedMidi) ? micState.smoothedMidi : rawMidi);
+      const expectedReference = getDisplayedGuideMidiAtTime(getSelectedMidiTrack(), historyTime, range.minMidi, range.maxMidi);
+      const displayReference = expectedReference ?? previousDisplay;
       const octaveAligned = octaveAlignedMidi(
         rawMidi,
         expectedReference,
@@ -2275,6 +2309,7 @@ els.voiceRange?.addEventListener("change", refreshMidiCharts);
 els.graphScale?.addEventListener("change", refreshMidiCharts);
 els.voiceThreshold?.addEventListener("change", refreshMidiCharts);
 els.guideOffset?.addEventListener("change", refreshMidiCharts);
+els.guideOctave?.addEventListener("change", refreshMidiCharts);
 els.pitchModel?.addEventListener("change", refreshMidiCharts);
 els.midiPartList?.addEventListener("change", () => {
   selectMidiTrack(els.midiPartList.value);
