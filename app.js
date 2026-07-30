@@ -500,7 +500,33 @@ function findAsciiTag(bytes, start, tag) {
   return -1;
 }
 
-function tickToSecondsFactory(tempoEvents, division) {
+function parseMidiDivision(divisionRaw) {
+  if ((divisionRaw & 0x8000) === 0) {
+    return {
+      type: "ppq",
+      divisionRaw,
+      ticksPerQuarter: divisionRaw > 0 ? divisionRaw : 480,
+    };
+  }
+  const rawFps = (divisionRaw >> 8) & 0xff;
+  const signedFps = rawFps >= 128 ? rawFps - 256 : rawFps;
+  const ticksPerFrame = divisionRaw & 0xff;
+  const fps = Math.abs(signedFps) || 30;
+  return {
+    type: "smpte",
+    divisionRaw,
+    fps: fps === 29 ? 29.97 : fps,
+    ticksPerFrame: ticksPerFrame || 80,
+  };
+}
+
+function tickToSecondsFactory(tempoEvents, divisionInfo) {
+  if (divisionInfo?.type === "smpte") {
+    const fps = divisionInfo.fps || 30;
+    const ticksPerFrame = divisionInfo.ticksPerFrame || 80;
+    return (tick) => tick / (fps * ticksPerFrame);
+  }
+  const division = divisionInfo?.ticksPerQuarter || divisionInfo || 480;
   const realTempoEvents = tempoEvents
     .filter((event) => Number.isFinite(event.tick) && Number.isFinite(event.tempo))
     .map((event, index) => ({ ...event, order: index }));
@@ -531,6 +557,20 @@ function tickToSecondsFactory(tempoEvents, division) {
     }
     return point.seconds + ((tick - point.tick) * point.tempo) / (division * 1000000);
   };
+}
+
+function smpteOffsetToSeconds(bytes, start, end, divisionInfo) {
+  if (end - start < 5) return 0;
+  const hourByte = bytes[start];
+  const frameRateCode = (hourByte >> 6) & 0x03;
+  const hour = hourByte & 0x1f;
+  const minute = bytes[start + 1] || 0;
+  const second = bytes[start + 2] || 0;
+  const frame = bytes[start + 3] || 0;
+  const subFrame = bytes[start + 4] || 0;
+  const fpsByCode = [24, 25, 29.97, 30];
+  const fps = divisionInfo?.fps || fpsByCode[frameRateCode] || 30;
+  return hour * 3600 + minute * 60 + second + frame / fps + subFrame / (fps * 100);
 }
 
 function normalizeParsedTracks(tracks) {
@@ -579,6 +619,24 @@ function maxTrackDuration(tracks = []) {
   return Math.max(0, ...tracks.map((track) => track.duration || 0));
 }
 
+function medianGuideStartDifference(candidateTracks = [], fallbackTracks = []) {
+  const diffs = [];
+  const count = Math.min(candidateTracks.length, fallbackTracks.length);
+  for (let trackIndex = 0; trackIndex < count; trackIndex += 1) {
+    const candidateNotes = candidateTracks[trackIndex]?.notes || [];
+    const fallbackNotes = fallbackTracks[trackIndex]?.notes || [];
+    const noteCount = Math.min(candidateNotes.length, fallbackNotes.length, 24);
+    for (let noteIndex = 0; noteIndex < noteCount; noteIndex += 1) {
+      const candidate = candidateNotes[noteIndex];
+      const fallback = fallbackNotes[noteIndex];
+      if (!Number.isFinite(candidate?.start) || !Number.isFinite(fallback?.start)) continue;
+      if (Number.isFinite(candidate?.pitch) && Number.isFinite(fallback?.pitch) && Math.abs(candidate.pitch - fallback.pitch) > 12) continue;
+      diffs.push(candidate.start - fallback.start);
+    }
+  }
+  return median(diffs);
+}
+
 function isPlausibleGuideReplacement(candidateTracks, fallbackTracks) {
   const candidateNotes = totalNoteCount(candidateTracks);
   if (candidateNotes <= 0) return false;
@@ -589,6 +647,11 @@ function isPlausibleGuideReplacement(candidateTracks, fallbackTracks) {
   if (fallbackDuration > 0 && candidateDuration > 0) {
     const ratio = candidateDuration / fallbackDuration;
     if (ratio < 0.5 || ratio > 2) return false;
+  }
+  const startDiff = medianGuideStartDifference(candidateTracks, fallbackTracks);
+  if (Number.isFinite(startDiff) && Math.abs(startDiff) > 0.75) {
+    logMidi(`BasicMIDI描画は不採用: 自前時刻との差 ${startDiff.toFixed(3)}s`);
+    return false;
   }
   return true;
 }
@@ -608,10 +671,14 @@ function parseMidiFile(arrayBuffer) {
   const divisionRaw = readUint16(view, state.offset);
   state.offset += 2;
   state.offset += Math.max(0, headerLength - 6);
-  const division = divisionRaw > 0 ? divisionRaw : 480;
+  const divisionInfo = parseMidiDivision(divisionRaw);
+  const division = divisionInfo.type === "ppq" ? divisionInfo.ticksPerQuarter : divisionInfo.ticksPerFrame;
   const tempoEvents = [];
   const tracks = [];
-  logMidi(`ヘッダ検出: format=${format}, trackCount=${trackCount}, division=${division}`);
+  const divisionLabel = divisionInfo.type === "smpte"
+    ? `SMPTE ${divisionInfo.fps}fps/${divisionInfo.ticksPerFrame}tpf`
+    : `PPQ ${divisionInfo.ticksPerQuarter}`;
+  logMidi(`ヘッダ検出: format=${format}, trackCount=${trackCount}, division=${divisionLabel}`);
   if (trackCount === 0) {
     logMidi("trackCount が 0 のため、MTrk を全体検索します");
   }
@@ -643,6 +710,7 @@ function parseMidiFile(arrayBuffer) {
     const activeNotes = new Map();
     const channelPrograms = new Map(Array.from({ length: 16 }, (_, channel) => [channel, 0]));
     let eventCount = 0;
+    let smpteOffsetSeconds = 0;
 
     while (state.offset < trackEnd) {
       tick += readVarInt(bytes, state);
@@ -669,6 +737,8 @@ function parseMidiFile(arrayBuffer) {
         } else if (metaType === 0x51 && len === 3) {
           const tempo = (bytes[dataStart] << 16) | (bytes[dataStart + 1] << 8) | bytes[dataStart + 2];
           tempoEvents.push({ tick, tempo });
+        } else if (metaType === 0x54) {
+          smpteOffsetSeconds = smpteOffsetToSeconds(bytes, dataStart, dataEnd, divisionInfo);
         } else if (metaType === 0x2f) {
           state.offset = dataEnd;
           break;
@@ -719,14 +789,14 @@ function parseMidiFile(arrayBuffer) {
       eventCount += 1;
     }
 
-    logMidi(`Track ${trackIndex + 1}: ${name}, notes=${notes.length}, events=${eventCount}, length=${trackLength}`);
-    tracks.push({ id: `${trackIndex}`, index: trackIndex, name, notes });
+    logMidi(`Track ${trackIndex + 1}: ${name}, notes=${notes.length}, events=${eventCount}, length=${trackLength}${smpteOffsetSeconds ? `, smpteOffset=${smpteOffsetSeconds.toFixed(3)}s` : ""}`);
+    tracks.push({ id: `${trackIndex}`, index: trackIndex, name, notes, smpteOffsetSeconds });
     state.offset = Math.min(trackEnd, bytes.length);
     scanOffset = state.offset;
     trackIndex += 1;
   }
 
-  const tickToSeconds = tickToSecondsFactory(tempoEvents, division);
+  const tickToSeconds = tickToSecondsFactory(tempoEvents, divisionInfo);
   const normalizedTracks = normalizeParsedTracks(tracks.map((track) => ({
     ...track,
     notes: track.notes.map((note) => ({
@@ -736,7 +806,7 @@ function parseMidiFile(arrayBuffer) {
     })),
   })));
 
-  return { format, division, tempoEvents, tracks: normalizedTracks, tickToSeconds };
+  return { format, division, divisionRaw, divisionInfo, tempoEvents, tracks: normalizedTracks, tickToSeconds };
 }
 
 function compressMicHistory(history, track = getSelectedMidiTrack()) {
