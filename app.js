@@ -15,6 +15,7 @@
   voiceThreshold: document.getElementById("voice-threshold"),
   guideOffset: document.getElementById("guide-offset"),
   guideOctave: document.getElementById("guide-octave"),
+  guideTranspose: document.getElementById("guide-transpose"),
   audioStatus: document.getElementById("audio-status"),
   audioProgress: document.getElementById("audio-progress"),
   audioNote: document.getElementById("audio-note"),
@@ -269,6 +270,15 @@ function getGuideOctaveShiftSemitones(track, minMidi, maxMidi) {
   return bestShift;
 }
 
+function getGuideTransposeSemitones() {
+  const semitones = Number(els.guideTranspose?.value || 0);
+  return Number.isFinite(semitones) ? semitones : 0;
+}
+
+function getGuidePitchShiftSemitones(track, minMidi, maxMidi) {
+  return getGuideOctaveShiftSemitones(track, minMidi, maxMidi) + getGuideTransposeSemitones();
+}
+
 function foldMidiToRange(midi, minMidi, maxMidi, anchor) {
   if (!Number.isFinite(midi)) return midi;
   if (!Number.isFinite(minMidi) || !Number.isFinite(maxMidi)) return midi;
@@ -338,7 +348,7 @@ function getExpectedMidiAtTime(track, time) {
 function getDisplayedGuideMidiAtTime(track, time, minMidi, maxMidi) {
   const baseMidi = getExpectedMidiAtTime(track, time);
   if (!Number.isFinite(baseMidi)) return null;
-  return baseMidi + getGuideOctaveShiftSemitones(track, minMidi, maxMidi);
+  return baseMidi + getGuidePitchShiftSemitones(track, minMidi, maxMidi);
 }
 
 function pickOctaveEquivalent(midi, referenceMidi, minMidi, maxMidi, previousMidi = null) {
@@ -1582,7 +1592,7 @@ function drawMicChart(history, expectedTarget) {
   const windowSeconds = 20 / getGraphScale();
   const liveClock = getGuideClockSeconds();
   const guideDisplayOffset = getGuideDisplayOffsetSeconds();
-  const guideOctaveShift = expectedTrack ? getGuideOctaveShiftSemitones(expectedTrack, minMidi, maxMidi) : 0;
+  const guidePitchShift = expectedTrack ? getGuidePitchShiftSemitones(expectedTrack, minMidi, maxMidi) : 0;
   const centeredWindow = getCenteredWindow(liveClock, expectedTrack?.duration, windowSeconds);
   let windowStart = centeredWindow.start;
   let windowEnd = centeredWindow.end;
@@ -1617,7 +1627,7 @@ function drawMicChart(history, expectedTarget) {
     visibleNotes.forEach((note, index) => {
       const x1 = xForTime((note.start || 0) + guideDisplayOffset);
       const x2 = xForTime((note.end || note.start || 0) + guideDisplayOffset);
-      const y = yFor(note.pitch + guideOctaveShift);
+      const y = yFor(note.pitch + guidePitchShift);
       ctx.save();
       const noteStrength = clamp((note.velocity ?? 80) / 127, 0.22, 1);
       ctx.fillStyle = `rgba(126,224,184,${0.22 + noteStrength * 0.42})`;
@@ -2380,6 +2390,7 @@ els.graphScale?.addEventListener("change", refreshMidiCharts);
 els.voiceThreshold?.addEventListener("change", refreshMidiCharts);
 els.guideOffset?.addEventListener("change", refreshMidiCharts);
 els.guideOctave?.addEventListener("change", refreshMidiCharts);
+els.guideTranspose?.addEventListener("change", refreshMidiCharts);
 els.pitchModel?.addEventListener("change", refreshMidiCharts);
 els.midiPartList?.addEventListener("change", () => {
   selectMidiTrack(els.midiPartList.value);
