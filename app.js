@@ -1,4 +1,5 @@
 ﻿const els = {
+  appVersion: document.getElementById("app-version"),
   voiceRange: document.getElementById("voice-range"),
   micStart: document.getElementById("mic-start"),
   micStop: document.getElementById("mic-stop"),
@@ -60,6 +61,8 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
+const APP_VERSION = "2026.07.31.1";
+const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 
 const defaultMidiSongs = {
@@ -115,6 +118,29 @@ let midiRuntimePromise = null;
 
 function setText(el, value) {
   if (el) el.textContent = value;
+}
+
+function formatVersionDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "--";
+  return date.toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function updateAppVersionInfo() {
+  const htmlUpdated = document.lastModified ? formatVersionDate(document.lastModified) : "--";
+  const jsLoaded = formatVersionDate(APP_JS_LOADED_AT);
+  const text = `SingLab ${APP_VERSION} / HTML ${htmlUpdated} / JS loaded ${jsLoaded}`;
+  setText(els.appVersion, text);
+  if (els.appVersion) els.appVersion.title = text;
+  document.documentElement.dataset.appVersion = APP_VERSION;
 }
 
 let midiDebugLines = [];
@@ -2523,6 +2549,7 @@ function toggleMetronome() {
 }
 
 function init() {
+  updateAppVersionInfo();
   resetMidiDebugLog();
   setText(els.micStatus, "停止中");
   setText(els.micNote, "--");

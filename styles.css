@@ -601,6 +601,26 @@ th { color: var(--muted); font-weight: 600; }
   min-height: 84px;
 }
 
+.app-version {
+  position: fixed;
+  right: 12px;
+  bottom: 10px;
+  z-index: 20;
+  max-width: min(92vw, 560px);
+  padding: 7px 10px;
+  border: 1px solid rgba(153, 171, 200, 0.2);
+  border-radius: 999px;
+  background: rgba(7, 17, 31, 0.78);
+  color: rgba(238, 244, 255, 0.72);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  font: 0.72rem/1.2 Consolas, "SFMono-Regular", monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
 @media (max-width: 920px) {
   .hero, .grid { grid-template-columns: 1fr; }
   .shell { width: min(100% - 20px, 1180px); }
@@ -608,4 +628,9 @@ th { color: var(--muted); font-weight: 600; }
   .live-strip, .status-grid { grid-template-columns: 1fr 1fr; }
   .field-inline { grid-template-columns: 1fr; }
   .midi-card-grid { grid-template-columns: 1fr; }
+  .app-version {
+    right: 8px;
+    bottom: 8px;
+    font-size: 0.64rem;
+  }
 }
