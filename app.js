@@ -16,6 +16,7 @@
   guideOffset: document.getElementById("guide-offset"),
   guideOctave: document.getElementById("guide-octave"),
   guideTranspose: document.getElementById("guide-transpose"),
+  countIn: document.getElementById("count-in"),
   audioStatus: document.getElementById("audio-status"),
   audioProgress: document.getElementById("audio-progress"),
   audioNote: document.getElementById("audio-note"),
@@ -240,6 +241,15 @@ function getGraphScale() {
 function getGuideDisplayOffsetSeconds() {
   const value = Number(els.guideOffset?.value || 0);
   return Number.isFinite(value) ? value / 1000 : 0;
+}
+
+function getCountInMode() {
+  return els.countIn?.value || "auto";
+}
+
+function getCountInTempo() {
+  const tempoEvent = midiState.parsed?.tempoEvents?.find((event) => Number.isFinite(event.tempo));
+  return tempoEvent?.tempo ? clamp(60000000 / tempoEvent.tempo, 40, 240) : 120;
 }
 
 function getGuideOctaveShiftSemitones(track, minMidi, maxMidi) {
@@ -1125,6 +1135,7 @@ function stopMidiPlayback() {
     playback.synth?.stopAll(true);
   } catch {}
   playback.playing = false;
+  playback.sessionId += 1;
   playback.startTime = 0;
   playback.seekStartSeconds = 0;
   playback.positionSeconds = 0;
@@ -1194,13 +1205,114 @@ function getGuideClockSeconds() {
   return 0;
 }
 
+function waitSeconds(seconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, seconds) * 1000));
+}
+
+function scheduleHiHat(audioContext, destination, when, accent = false) {
+  const duration = accent ? 0.055 : 0.04;
+  const sampleRate = audioContext.sampleRate;
+  const buffer = audioContext.createBuffer(1, Math.ceil(sampleRate * duration), sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) {
+    const t = i / Math.max(1, data.length - 1);
+    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 3.6);
+  }
+  const source = audioContext.createBufferSource();
+  const highpass = audioContext.createBiquadFilter();
+  const gain = audioContext.createGain();
+  highpass.type = "highpass";
+  highpass.frequency.value = 6200;
+  gain.gain.setValueAtTime(accent ? 0.34 : 0.24, when);
+  gain.gain.exponentialRampToValueAtTime(0.001, when + duration);
+  source.buffer = buffer;
+  source.connect(highpass);
+  highpass.connect(gain);
+  gain.connect(destination);
+  source.start(when);
+  source.stop(when + duration + 0.02);
+}
+
+function beginCountInCalibration(expectedTimes) {
+  countInState.active = getCountInMode() === "auto";
+  countInState.expectedTimes = expectedTimes;
+  countInState.matched = [];
+  countInState.lastPeakTime = 0;
+  countInState.baselineRms = 0.01;
+  micState.inputLatencySeconds = 0;
+  if (countInState.active) {
+    setText(els.micStatus, "カウント検知中");
+  }
+}
+
+function finishCountInCalibration() {
+  if (!countInState.active) return;
+  countInState.active = false;
+  if (countInState.matched.length < 2) {
+    logMidi("カウント検知: 不十分なため自動補正なし");
+    return;
+  }
+  const offsets = countInState.matched
+    .map((item) => item.observed - item.expected)
+    .filter((value) => Number.isFinite(value) && value >= -0.05 && value <= 0.8);
+  const latency = median(offsets);
+  if (!Number.isFinite(latency)) {
+    logMidi("カウント検知: 補正値を計算できませんでした");
+    return;
+  }
+  micState.inputLatencySeconds = clamp(latency, 0, 0.45);
+  logMidi(`カウント検知: ${countInState.matched.length}/${countInState.expectedTimes.length} 拍, 歌声描画を ${micState.inputLatencySeconds.toFixed(3)}s 前へ補正`);
+  setText(els.micStatus, `解析中 / 自動補正 ${Math.round(micState.inputLatencySeconds * 1000)}ms`);
+}
+
+function detectCountInPeak(nowAbsoluteSeconds, rms) {
+  if (!countInState.active || !Number.isFinite(rms)) return;
+  countInState.baselineRms = countInState.baselineRms * 0.94 + rms * 0.06;
+  const loudEnough = rms > Math.max(0.035, countInState.baselineRms * 3.2);
+  if (!loudEnough || nowAbsoluteSeconds - countInState.lastPeakTime < 0.16) return;
+  const target = countInState.expectedTimes.find((time) => (
+    !countInState.matched.some((item) => item.expected === time)
+    && nowAbsoluteSeconds >= time - 0.08
+    && nowAbsoluteSeconds <= time + 0.55
+  ));
+  if (!Number.isFinite(target)) return;
+  countInState.matched.push({ expected: target, observed: nowAbsoluteSeconds, rms });
+  countInState.lastPeakTime = nowAbsoluteSeconds;
+}
+
+async function playCountIn(playback) {
+  const mode = getCountInMode();
+  if (mode === "off") {
+    micState.inputLatencySeconds = 0;
+    return 0;
+  }
+  const audioContext = playback.audioContext;
+  const destination = playback.masterGain || audioContext.destination;
+  const tempo = getCountInTempo();
+  const beatSeconds = 60 / tempo;
+  const patternBeats = [0, 2, 4, 5, 6];
+  const startDelay = 0.18;
+  const startAt = audioContext.currentTime + startDelay;
+  const perfStart = performance.now() / 1000 + startDelay;
+  const expectedTimes = patternBeats.map((beat) => perfStart + beat * beatSeconds);
+  beginCountInCalibration(expectedTimes);
+  patternBeats.forEach((beat, index) => {
+    scheduleHiHat(audioContext, destination, startAt + beat * beatSeconds, index === 0 || beat === 4);
+  });
+  const totalSeconds = 8 * beatSeconds + startDelay;
+  logMidi(`カウントイン: 2小節 / ${tempo.toFixed(1)} BPM / pattern=1,3,5,6,7拍`);
+  await waitSeconds(totalSeconds);
+  finishCountInCalibration();
+  return totalSeconds;
+}
+
 async function startPracticeSession() {
   await startMic();
   const hasPlayableMidi = (midiState.tracks || []).some((track) => track?.notes?.length);
   if (!hasPlayableMidi) return;
   try {
-    await playMidiTrack(midiState.playback.positionSeconds || 0);
     resetMicTrackingState({ clearHistory: true });
+    await playMidiTrack(midiState.playback.positionSeconds || 0);
     refreshMidiCharts();
   } catch (error) {
     stopMic().catch(() => {});
@@ -1304,15 +1416,19 @@ async function playMidiTrack(startSeconds = 0) {
   }
   stopMidiPlayback();
   const playback = await ensureMidiRuntime();
+  const sessionId = playback.sessionId + 1;
+  playback.sessionId = sessionId;
   const { BasicMIDI } = playback.runtime;
   const midiSequence = BasicMIDI.fromArrayBuffer(midiState.midiBuffer);
   await Promise.resolve(playback.sequencer.loadNewSongList([midiSequence]));
   playback.duration = Math.max(0.1, ...(tracks || []).map((track) => track.duration || 0));
   playback.positionSeconds = clamp(startSeconds, 0, playback.duration);
-  playback.playing = true;
-  playback.startTime = playback.audioContext.currentTime;
   playback.seekStartSeconds = playback.positionSeconds;
   playback.sequencer.currentTime = playback.positionSeconds;
+  await playCountIn(playback);
+  if (playback.sessionId !== sessionId) return;
+  playback.playing = true;
+  playback.startTime = playback.audioContext.currentTime;
   await Promise.resolve(playback.sequencer.play());
   logMidi(`再生開始: tracks=${tracks.length}, notes=${midiSequence.tracks?.reduce((sum, track) => sum + (track.notes?.length || 0), 0) || 0}, seek=${playback.positionSeconds.toFixed(2)}s`);
   if (els.midiPlay) els.midiPlay.textContent = "再生中";
@@ -1789,6 +1905,7 @@ const micState = {
   pitchWindow: [],
   lastVoiceTime: 0,
   captureClock: 0,
+  inputLatencySeconds: 0,
 };
 
 const midiState = {
@@ -1810,7 +1927,16 @@ const midiState = {
     duration: 0,
     notes: [],
     playing: false,
+    sessionId: 0,
   },
+};
+
+const countInState = {
+  active: false,
+  expectedTimes: [],
+  matched: [],
+  lastPeakTime: 0,
+  baselineRms: 0.01,
 };
 
 async function loadMidiRuntime() {
@@ -2091,10 +2217,12 @@ async function startMic() {
     if (!micState.analyser) return;
     micState.analyser.getFloatTimeDomainData(buffer);
     const { frequency, confidence, rms } = estimateFrequency(buffer, audioContext.sampleRate);
-    const now = (performance.now() / 1000) - micState.captureClock;
+    const nowAbsolute = performance.now() / 1000;
+    detectCountInPeak(nowAbsolute, rms);
+    const now = nowAbsolute - micState.captureClock;
     const guideClock = midiState.playback.playing ? getMidiPlaybackPositionSeconds() : now;
     const analysisLatencySeconds = (analyser.fftSize / audioContext.sampleRate) * 0.5;
-    const historyTime = Math.max(0, guideClock - analysisLatencySeconds);
+    const historyTime = Math.max(0, guideClock - analysisLatencySeconds - (micState.inputLatencySeconds || 0));
     const thresholds = getVoiceThresholdPreset();
     const strongEnough = Number.isFinite(frequency) && confidence >= thresholds.confidence && rms >= thresholds.rms;
     if (strongEnough) {
@@ -2191,6 +2319,10 @@ async function stopMic() {
   micState.pitchWindow = [];
   micState.lastVoiceTime = 0;
   micState.captureClock = 0;
+  micState.inputLatencySeconds = 0;
+  countInState.active = false;
+  countInState.expectedTimes = [];
+  countInState.matched = [];
   setText(els.micStatus, "停止中");
   setText(els.micNote, "--");
   setText(els.micFrequency, "--");
