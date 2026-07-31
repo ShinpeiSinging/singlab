@@ -61,7 +61,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.01.6";
+const APP_VERSION = "2026.08.01.7";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 
@@ -342,11 +342,17 @@ function setGuideTransposeSemitones(value) {
     els.guideTranspose.appendChild(option);
   }
   els.guideTranspose.value = String(semitones);
+  renderMidiTrackList();
   refreshMidiCharts();
 }
 
 function getGuidePitchShiftSemitones(track, minMidi, maxMidi) {
   return getGuideOctaveShiftSemitones(track, minMidi, maxMidi) + getGuideTransposeSemitones();
+}
+
+function getScoringPitchShiftSemitones(track) {
+  const range = getVoiceRangePreset();
+  return getGuidePitchShiftSemitones(track, range.minMidi, range.maxMidi);
 }
 
 function foldMidiToRange(midi, minMidi, maxMidi, anchor) {
@@ -895,8 +901,10 @@ function compressMicHistory(history, track = getSelectedMidiTrack()) {
   const segments = [];
   let current = null;
   let previousNormalized = null;
+  const pitchShift = track ? getScoringPitchShiftSemitones(track) : 0;
   for (const point of points) {
-    const guideMidi = track ? getExpectedMidiAtTime(track, point.time) : null;
+    const baseGuideMidi = track ? getExpectedMidiAtTime(track, point.time) : null;
+    const guideMidi = Number.isFinite(baseGuideMidi) ? baseGuideMidi + pitchShift : null;
     const normalizedMidi = pickOctaveEquivalent(point.midi, guideMidi, 24, 96, previousNormalized);
     if (!current) {
       current = {
@@ -1034,13 +1042,16 @@ function renderMidiTrackList() {
   const displayTracks = getGuideDisplayTracks();
   const displayCount = allMode ? tracks.length : displayTracks.length;
   const displayNames = allMode ? "全パート" : displayTracks.map((track) => track.name).join(" + ");
+  const scoringShift = selectedTrack ? getScoringPitchShiftSemitones(selectedTrack) : 0;
+  const shiftText = scoringShift ? ` / 補正 ${scoringShift > 0 ? "+" : ""}${scoringShift}半音` : "";
   setText(els.midiExcludeStatus, allMode ? `全パート表示中 / 採点基準: ${selectedTrack?.name || "--"}` : (selectedTrack ? `選択中: ${displayNames}` : `MIDI 読込済み (${tracks.length}トラック)`));
   setText(els.midiTopStatus, allMode ? `全パート (${tracks.length})` : (selectedTrack ? `${displayCount}パート` : `読込済み (${tracks.length})`));
-  setText(els.midiTopSelected, selectedTrack ? `採点: ${selectedTrack.name}` : "トラック未選択");
+  setText(els.midiTopSelected, selectedTrack ? `採点: ${selectedTrack.name}${shiftText}` : "トラック未選択");
 }
 
 function buildMidiComparison(track, micSegments) {
   const notes = track?.notes || [];
+  const pitchShift = getScoringPitchShiftSemitones(track);
   const rows = [];
   let pitchDiffSum = 0;
   let onsetDiffSum = 0;
@@ -1049,6 +1060,7 @@ function buildMidiComparison(track, micSegments) {
   const usedSegments = new Set();
   for (let index = 0; index < notes.length; index += 1) {
     const note = notes[index];
+    const expectedPitch = note.pitch + pitchShift;
     let observed = null;
     let observedScore = -Infinity;
     let observedIndex = -1;
@@ -1057,7 +1069,7 @@ function buildMidiComparison(track, micSegments) {
       const overlap = Math.max(0, Math.min(note.end, segment.end) - Math.max(note.start, segment.start));
       const onsetDistance = Math.abs((segment.start ?? 0) - note.start);
       const offsetDistance = Math.abs((segment.end ?? 0) - note.end);
-      const pitchDistance = Number.isFinite(segment.midi) ? Math.abs(segment.midi - note.pitch) : 12;
+      const pitchDistance = Number.isFinite(segment.midi) ? Math.abs(segment.midi - expectedPitch) : 12;
       const confidenceBonus = (segment.confidence ?? 0) * 1.8;
       const score = overlap * 4.5 - onsetDistance * 1.6 - offsetDistance * 0.7 - pitchDistance * 0.9 + confidenceBonus;
       if (score > observedScore) {
@@ -1071,8 +1083,8 @@ function buildMidiComparison(track, micSegments) {
       observedIndex = index;
     }
     if (observedIndex >= 0) usedSegments.add(observedIndex);
-    const normalizedObservedMidi = observed ? pickOctaveEquivalent(observed.midi, note.pitch, 24, 96) : null;
-    const pitchDiff = normalizedObservedMidi != null ? normalizedObservedMidi - note.pitch : null;
+    const normalizedObservedMidi = observed ? pickOctaveEquivalent(observed.midi, expectedPitch, 24, 96) : null;
+    const pitchDiff = normalizedObservedMidi != null ? normalizedObservedMidi - expectedPitch : null;
     const onsetDiff = observed ? observed.start - note.start : null;
     const durationRatio = observed ? observed.duration / note.duration : null;
     if (observed) {
@@ -1082,7 +1094,8 @@ function buildMidiComparison(track, micSegments) {
       matched += 1;
     }
     rows.push({
-      expected: note.pitch,
+      expected: expectedPitch,
+      originalExpected: note.pitch,
       observed: normalizedObservedMidi != null ? Math.round(normalizedObservedMidi) : null,
       observedRaw: observed ? Math.round(observed.midi) : null,
       pitchDiff,
@@ -1118,14 +1131,16 @@ function drawMidiComparisonChart(track, micSegments) {
   ctx.fillStyle = "#091120";
   ctx.fillRect(0, 0, cssWidth, cssHeight);
   if (!track?.notes?.length) return;
+  const pitchShift = getScoringPitchShiftSemitones(track);
+  const shiftedNotes = track.notes.map((note) => ({ ...note, pitch: note.pitch + pitchShift, originalPitch: note.pitch }));
   const normalizedSegments = (micSegments || []).map((segment, index) => {
-    const expectedNote = track.notes[Math.min(index, track.notes.length - 1)] || null;
+    const expectedNote = shiftedNotes[Math.min(index, shiftedNotes.length - 1)] || null;
     return {
       ...segment,
       midi: expectedNote ? pickOctaveEquivalent(segment.midi, expectedNote.pitch, 24, 96) : segment.midi,
     };
   });
-  const allPitches = [...track.notes.map((note) => note.pitch), ...normalizedSegments.map((seg) => seg.midi)].filter(Number.isFinite);
+  const allPitches = [...shiftedNotes.map((note) => note.pitch), ...normalizedSegments.map((seg) => seg.midi)].filter(Number.isFinite);
   const minMidi = Math.max(24, Math.floor((Math.min(...allPitches) || 60) - 6));
   const maxMidi = Math.min(96, Math.ceil((Math.max(...allPitches) || 72) + 6));
   const yFor = (midi) => midiToY(midi, minMidi, maxMidi, cssHeight);
@@ -1167,7 +1182,7 @@ function drawMidiComparisonChart(track, micSegments) {
     ctx.restore();
   };
 
-  drawBars(track.notes, "rgba(126,224,184,.72)", "pitch", 0.9);
+  drawBars(shiftedNotes, "rgba(126,224,184,.72)", "pitch", 0.9);
   drawBars(normalizedSegments, "rgba(122,183,255,.9)", "midi", 0.8);
 }
 
@@ -2756,8 +2771,14 @@ els.voiceRange?.addEventListener("change", refreshMidiCharts);
 els.graphScale?.addEventListener("change", refreshMidiCharts);
 els.voiceThreshold?.addEventListener("change", refreshMidiCharts);
 els.guideOffset?.addEventListener("change", refreshMidiCharts);
-els.guideOctave?.addEventListener("change", refreshMidiCharts);
-els.guideTranspose?.addEventListener("change", refreshMidiCharts);
+els.guideOctave?.addEventListener("change", () => {
+  renderMidiTrackList();
+  refreshMidiCharts();
+});
+els.guideTranspose?.addEventListener("change", () => {
+  renderMidiTrackList();
+  refreshMidiCharts();
+});
 els.pitchModel?.addEventListener("change", refreshMidiCharts);
 setupMidiPartMultiSelect();
 setupGuidePitchSwipe();
