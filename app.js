@@ -61,7 +61,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.07.31.4";
+const APP_VERSION = "2026.08.01.2";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 
@@ -71,10 +71,30 @@ const defaultMidiSongs = {
     fileName: "幸せをつかむため.mid",
     url: "./assets/midi/shiawase-wo-tsukamu-tame.mid",
   },
+  jiyu_ni_naritai_chorus: {
+    title: "M2 自由になりたい（別紙コーラス）",
+    fileName: "M2自由になりたい-別紙コーラス.mid",
+    url: "./assets/midi/jiyu-ni-naritai-chorus.mid",
+  },
+  yamerarenai: {
+    title: "M8 やめられない",
+    fileName: "M8やめられない.mid",
+    url: "./assets/midi/yamerarenai.mid",
+  },
+  maho_no_ringo: {
+    title: "M9 魔法のりんご",
+    fileName: "M9魔法のりんご.mid",
+    url: "./assets/midi/maho-no-ringo.mid",
+  },
   kaeritai: {
-    title: "帰りたい",
-    fileName: "帰りたい.mid",
+    title: "M14 帰りたい",
+    fileName: "M14帰りたい.mid",
     url: "./assets/midi/kaeritai.mid",
+  },
+  glass_no_kutsu: {
+    title: "ガラスの靴",
+    fileName: "ガラスの靴.mid",
+    url: "./assets/midi/glass-no-kutsu.mid",
   },
 };
 
