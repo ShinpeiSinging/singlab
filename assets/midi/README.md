@@ -2,8 +2,8 @@
 
 Put the bundled preset songs here before publishing:
 
-- `shiawase-wo-tsukamu-tame.mid`
 - `jiyu-ni-naritai-chorus.mid`
+- `jiyu-wa-ikaga.mid`
 - `yamerarenai.mid`
 - `maho-no-ringo.mid`
 - `kaeritai.mid`

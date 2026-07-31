@@ -8,12 +8,12 @@ New-Item -ItemType Directory -Force -Path $dropDir | Out-Null
 
 $presets = @(
   @{
-    DropFile = "幸せをつかむため.mid"
-    Target = "shiawase-wo-tsukamu-tame.mid"
-  },
-  @{
     DropFile = "M2自由になりたい-別紙コーラス.mid"
     Target = "jiyu-ni-naritai-chorus.mid"
+  },
+  @{
+    DropFile = "M5自由はいかが.mid"
+    Target = "jiyu-wa-ikaga.mid"
   },
   @{
     DropFile = "M8やめられない.mid"

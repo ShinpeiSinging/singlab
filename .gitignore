@@ -16,3 +16,6 @@ publish_to_github.ps1
 # Local drop zone for preset MIDI sources. Commit copied files under assets/midi/.
 preset-midi-drop/*.mid
 preset-midi-drop/*.midi
+
+# Raw MIDI files copied in with original Japanese names. Use stable public names.
+assets/midi/【*.mid
