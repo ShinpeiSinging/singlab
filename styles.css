@@ -1415,3 +1415,228 @@ body {
     gap: 3px;
   }
 }
+
+/* Mobile browsers have unstable viewport height because the address bar appears/disappears.
+   Keep the transport reachable by pinning it to the safe area. */
+@media (max-width: 760px), (max-height: 520px) and (pointer: coarse) {
+  :root {
+    --mobile-transport-h: 48px;
+    --mobile-options-h: 43px;
+    --mobile-dock-h: calc(var(--mobile-transport-h) + var(--mobile-options-h) + env(safe-area-inset-bottom, 0px));
+  }
+
+  html,
+  body {
+    height: 100svh;
+    min-height: 100svh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .shell {
+    width: 100%;
+    height: 100svh;
+    padding: 3px;
+  }
+
+  .scoring-layout {
+    height: calc(100svh - 6px);
+    min-height: 0;
+    padding: 4px;
+    gap: 4px;
+  }
+
+  .top-controls {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: 4px;
+  }
+
+  .control-card {
+    padding: 5px 6px;
+    border-radius: 12px;
+  }
+
+  .control-title {
+    margin-bottom: 3px;
+  }
+
+  .control-title h2 {
+    display: none;
+  }
+
+  .control-title span {
+    width: 100%;
+    font-size: 0.6rem;
+    text-align: left;
+  }
+
+  .midi-source-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .file-pill {
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: 0.68rem;
+  }
+
+  .default-midi-select,
+  .midi-part-select {
+    min-height: 28px;
+    padding: 3px 6px;
+    border-radius: 9px;
+    font-size: 0.68rem;
+  }
+
+  .pitch-panel {
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 4px;
+    padding: 5px;
+    padding-bottom: calc(var(--mobile-dock-h) + 6px);
+  }
+
+  .pitch-panel .chart-head {
+    min-height: 18px;
+  }
+
+  .pitch-panel .chart-head h3 {
+    font-size: 0.78rem;
+  }
+
+  .pitch-panel .chart-head span {
+    font-size: 0.62rem;
+  }
+
+  .pitch-panel canvas {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .transport-row {
+    position: fixed;
+    left: 6px;
+    right: 6px;
+    bottom: max(4px, env(safe-area-inset-bottom, 0px));
+    z-index: 80;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 5px;
+    align-items: center;
+    min-height: var(--mobile-transport-h);
+    padding: 6px 7px;
+    border: 1px solid rgba(153, 171, 200, 0.24);
+    border-radius: 14px;
+    background: rgba(7, 17, 31, 0.94);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(12px);
+  }
+
+  .transport-row .button {
+    min-height: 34px;
+    padding: 6px 9px;
+    font-size: 0.72rem;
+  }
+
+  .seek-inline {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .seek-inline span {
+    font-size: 0.56rem;
+  }
+
+  .volume-inline {
+    display: none;
+  }
+
+  .graph-option-row {
+    position: fixed;
+    left: 6px;
+    right: 6px;
+    bottom: calc(var(--mobile-transport-h) + max(8px, env(safe-area-inset-bottom, 0px)));
+    z-index: 79;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(78px, 1fr);
+    grid-template-columns: none;
+    gap: 4px;
+    min-height: var(--mobile-options-h);
+    padding: 5px 6px;
+    border: 1px solid rgba(153, 171, 200, 0.2);
+    border-radius: 13px;
+    background: rgba(7, 17, 31, 0.9);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    backdrop-filter: blur(12px);
+  }
+
+  .graph-option-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .graph-option-row label {
+    min-width: 78px;
+  }
+
+  .graph-option-row label span {
+    font-size: 0.52rem;
+  }
+
+  .graph-option-row select {
+    min-height: 24px;
+    padding: 2px 4px;
+    font-size: 0.58rem;
+  }
+
+  .app-version {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) and (orientation: landscape) {
+  :root {
+    --mobile-transport-h: 42px;
+    --mobile-options-h: 36px;
+  }
+
+  .top-controls {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  }
+
+  .control-card {
+    padding: 3px 5px;
+  }
+
+  .control-title {
+    display: none;
+  }
+
+  .file-pill,
+  .default-midi-select,
+  .midi-part-select {
+    min-height: 24px;
+    font-size: 0.6rem;
+  }
+
+  .pitch-panel {
+    padding: 4px;
+    padding-bottom: calc(var(--mobile-dock-h) + 4px);
+  }
+
+  .pitch-panel .chart-head {
+    display: none;
+  }
+
+  .transport-row .button {
+    min-height: 29px;
+    padding: 4px 8px;
+    font-size: 0.64rem;
+  }
+
+  .graph-option-row select {
+    min-height: 21px;
+  }
+}
