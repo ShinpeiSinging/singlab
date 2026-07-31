@@ -115,6 +115,20 @@ input[type="number"] {
   color: var(--text);
   padding: 10px 12px;
 }
+
+select option {
+  background: #111c30;
+  color: #eef4ff;
+}
+
+select option:checked {
+  background: #1f6ed4;
+  color: #ffffff;
+}
+
+select option:disabled {
+  color: #8fa2c1;
+}
 .hint { font-size: .92rem; }
 
 .results { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
