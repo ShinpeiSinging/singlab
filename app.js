@@ -61,7 +61,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.07.31.2";
+const APP_VERSION = "2026.07.31.3";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 
@@ -929,8 +929,20 @@ function getSelectedMidiTrack() {
   return midiState.tracks.find((track) => track.id === midiState.selectedTrackId) || midiState.tracks[0] || null;
 }
 
+function getGuideDisplayTracks() {
+  if (!midiState.tracks?.length) return [];
+  if (midiState.guideDisplayMode === "all") return midiState.tracks;
+  const selectedTrack = getSelectedMidiTrack();
+  return selectedTrack ? [selectedTrack] : [];
+}
+
 function selectMidiTrack(trackId) {
-  midiState.selectedTrackId = trackId;
+  if (trackId === "__all__") {
+    midiState.guideDisplayMode = "all";
+  } else {
+    midiState.guideDisplayMode = "selected";
+    midiState.selectedTrackId = trackId;
+  }
   micState.lastDisplayedMidi = null;
   renderMidiTrackList();
   refreshMidiCharts();
@@ -940,6 +952,7 @@ function chooseBestMidiTrack() {
   if (!midiState.tracks?.length) return;
   const sorted = [...midiState.tracks].sort((a, b) => scoreMidiTrack(b) - scoreMidiTrack(a));
   midiState.selectedTrackId = sorted[0]?.id || midiState.tracks[0].id;
+  midiState.guideDisplayMode = "selected";
   micState.lastDisplayedMidi = null;
   renderMidiTrackList();
   refreshMidiCharts();
@@ -958,6 +971,10 @@ function renderMidiTrackList() {
     return;
   }
   els.midiPartList.disabled = false;
+  const allOption = document.createElement("option");
+  allOption.value = "__all__";
+  allOption.textContent = `全パート表示 · ${tracks.length}トラック · 採点基準は選択中パート`;
+  els.midiPartList.appendChild(allOption);
   tracks.forEach((track) => {
     const avgPitchText = track.averagePitch != null ? noteNameFromMidi(track.averagePitch) : "--";
     const option = document.createElement("option");
@@ -965,11 +982,12 @@ function renderMidiTrackList() {
     option.textContent = `${track.name} · ${track.instrumentSummary || "不明"} · ${track.notes.length}音 · ${track.duration.toFixed(1)}秒 · ${avgPitchText} · ${scoreMidiTrack(track).toFixed(1)}`;
     els.midiPartList.appendChild(option);
   });
-  els.midiPartList.value = midiState.selectedTrackId || tracks[0]?.id || "";
+  els.midiPartList.value = midiState.guideDisplayMode === "all" ? "__all__" : (midiState.selectedTrackId || tracks[0]?.id || "");
   const selectedTrack = getSelectedMidiTrack();
-  setText(els.midiExcludeStatus, selectedTrack ? `選択中: ${selectedTrack.name}` : `MIDI 読込済み (${tracks.length}トラック)`);
-  setText(els.midiTopStatus, selectedTrack ? "選択中" : `読込済み (${tracks.length}トラック)`);
-  setText(els.midiTopSelected, selectedTrack ? `お手本: ${selectedTrack.name}` : "トラック未選択");
+  const allMode = midiState.guideDisplayMode === "all";
+  setText(els.midiExcludeStatus, allMode ? `全パート表示中 / 採点基準: ${selectedTrack?.name || "--"}` : (selectedTrack ? `選択中: ${selectedTrack.name}` : `MIDI 読込済み (${tracks.length}トラック)`));
+  setText(els.midiTopStatus, allMode ? `全パート表示 (${tracks.length}トラック)` : (selectedTrack ? "選択中" : `読込済み (${tracks.length}トラック)`));
+  setText(els.midiTopSelected, allMode ? `お手本: 全パート / 採点: ${selectedTrack?.name || "--"}` : (selectedTrack ? `お手本: ${selectedTrack.name}` : "トラック未選択"));
 }
 
 function buildMidiComparison(track, micSegments) {
@@ -1790,6 +1808,7 @@ function drawMicChart(history, expectedTarget) {
   const expectedTrack = expectedTarget && Array.isArray(expectedTarget.notes)
     ? expectedTarget
     : (selectedTrack && Array.isArray(selectedTrack.notes) ? selectedTrack : null);
+  const displayTracks = getGuideDisplayTracks();
   const expectedMidi = Number.isFinite(expectedTarget) ? expectedTarget : null;
   const windowSeconds = 20 / getGraphScale();
   const liveClock = getGuideClockSeconds();
@@ -1820,23 +1839,34 @@ function drawMicChart(history, expectedTarget) {
     ctx.fillText(`${labels[pc]}${Math.floor(midi / 12) - 1}`, 8, y + 3);
   }
 
-  if (expectedTrack?.notes?.length) {
-    const visibleNotes = expectedTrack.notes.filter((note) => {
-      const displayStart = note.start + guideDisplayOffset;
-      const displayEnd = note.end + guideDisplayOffset;
-      return displayEnd >= windowStart && displayStart <= windowEnd;
-    });
-    visibleNotes.forEach((note, index) => {
-      const x1 = xForTime((note.start || 0) + guideDisplayOffset);
-      const x2 = xForTime((note.end || note.start || 0) + guideDisplayOffset);
-      const y = yFor(note.pitch + guidePitchShift);
-      ctx.save();
-      const noteStrength = clamp((note.velocity ?? 80) / 127, 0.22, 1);
-      ctx.fillStyle = `rgba(126,224,184,${0.22 + noteStrength * 0.42})`;
-      ctx.beginPath();
-      ctx.roundRect(Math.min(x1, x2), y - 8, Math.max(6, Math.abs(x2 - x1)), 16, 8);
-      ctx.fill();
-      ctx.restore();
+  if (displayTracks.length) {
+    const allMode = midiState.guideDisplayMode === "all";
+    displayTracks.forEach((track) => {
+      const trackIsSelected = expectedTrack?.id === track.id;
+      const trackShift = getGuidePitchShiftSemitones(track, minMidi, maxMidi);
+      const visibleNotes = track.notes.filter((note) => {
+        const displayStart = note.start + guideDisplayOffset;
+        const displayEnd = note.end + guideDisplayOffset;
+        return displayEnd >= windowStart && displayStart <= windowEnd;
+      });
+      visibleNotes.forEach((note) => {
+        const x1 = xForTime((note.start || 0) + guideDisplayOffset);
+        const x2 = xForTime((note.end || note.start || 0) + guideDisplayOffset);
+        const y = yFor(note.pitch + trackShift);
+        ctx.save();
+        const noteStrength = clamp((note.velocity ?? 80) / 127, 0.22, 1);
+        const selectedBoost = trackIsSelected ? 0.16 : 0;
+        const alpha = allMode
+          ? (trackIsSelected ? 0.3 + noteStrength * 0.34 : 0.11 + noteStrength * 0.18)
+          : 0.22 + noteStrength * 0.42;
+        ctx.fillStyle = trackIsSelected
+          ? `rgba(126,224,184,${clamp(alpha + selectedBoost, 0.12, 0.82)})`
+          : `rgba(122,183,255,${clamp(alpha, 0.08, 0.42)})`;
+        ctx.beginPath();
+        ctx.roundRect(Math.min(x1, x2), y - (trackIsSelected ? 8 : 6), Math.max(5, Math.abs(x2 - x1)), trackIsSelected ? 16 : 12, trackIsSelected ? 8 : 6);
+        ctx.fill();
+        ctx.restore();
+      });
     });
   } else if (expectedMidi != null) {
     const expectedY = yFor(expectedMidi);
@@ -1999,6 +2029,7 @@ const midiState = {
   midiBuffer: null,
   tracks: [],
   selectedTrackId: null,
+  guideDisplayMode: "selected",
   parsed: null,
   playback: {
     audioContext: null,
@@ -2453,6 +2484,7 @@ async function loadMidiFile(file) {
     midiState.parsed = parsed;
     midiState.tracks = guideTracks;
     midiState.selectedTrackId = guideTracks[0]?.id || null;
+    midiState.guideDisplayMode = "selected";
     if (!guideTracks.length) {
       setText(els.midiExcludeStatus, "MIDI は読めましたが、音符が見つかりませんでした");
       setText(els.midiTopStatus, "読込済み");
@@ -2472,6 +2504,7 @@ async function loadMidiFile(file) {
     midiState.parsed = null;
     midiState.tracks = [];
     midiState.selectedTrackId = null;
+    midiState.guideDisplayMode = "selected";
     renderMidiTrackList();
     refreshMidiCharts();
     setText(els.midiExcludeStatus, `MIDI 読込失敗: ${error.message}`);
