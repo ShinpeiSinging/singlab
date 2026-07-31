@@ -315,10 +315,6 @@ function getCenteredWindow(currentTime, duration, windowSeconds = 20) {
   const half = windowSeconds / 2;
   let start = safeTime - half;
   let end = start + windowSeconds;
-  if (Number.isFinite(duration) && duration > 0 && safeTime > duration - half) {
-    end = duration;
-    start = duration - windowSeconds;
-  }
   return { start, end, center: safeTime };
 }
 
@@ -1121,15 +1117,16 @@ function renderMidiComparison() {
       .join("");
   }
   drawMidiComparisonChart(track, micSegments);
-  if (!midiState.playback.playing && els.midiSeek) els.midiSeek.value = "0";
 }
 
-function stopMidiPlayback() {
+function stopMidiPlayback({ resetPosition = false, resetDuration = false, keepVisualTail = false } = {}) {
   const playback = midiState.playback;
-  clearMidiPlaybackTimer();
+  if (!keepVisualTail) {
+    clearMidiPlaybackTimer();
+  }
   try {
     playback.sequencer?.pause();
-    if (playback.sequencer) playback.sequencer.currentTime = 0;
+    if (playback.sequencer && resetPosition) playback.sequencer.currentTime = 0;
   } catch {}
   try {
     playback.synth?.stopAll(true);
@@ -1137,12 +1134,17 @@ function stopMidiPlayback() {
   playback.playing = false;
   playback.sessionId += 1;
   playback.startTime = 0;
-  playback.seekStartSeconds = 0;
-  playback.positionSeconds = 0;
-  playback.duration = 0;
+  playback.seekStartSeconds = playback.positionSeconds || 0;
+  if (!keepVisualTail) {
+    playback.visualTailStartPerf = null;
+    playback.visualTailStartPosition = null;
+    playback.visualTailSeconds = 0;
+  }
+  if (resetPosition) playback.positionSeconds = 0;
+  if (resetDuration) playback.duration = 0;
   playback.notes = [];
   if (els.midiPlay) els.midiPlay.textContent = "再生";
-  updateMidiPlaybackUi(0);
+  updateMidiPlaybackUi(playback.positionSeconds || 0);
 }
 
 function updateMidiSeek(value) {
@@ -1166,10 +1168,34 @@ function refreshMidiCharts() {
   renderMidiComparison();
 }
 
+function getAudioClockSeconds(playback) {
+  const audioContext = playback.audioContext;
+  if (!audioContext || !Number.isFinite(playback.startTime)) return null;
+  let contextTime = audioContext.currentTime;
+  if (typeof audioContext.getOutputTimestamp === "function") {
+    try {
+      const stamp = audioContext.getOutputTimestamp();
+      const performanceTime = Number(stamp.performanceTime);
+      const stampedContextTime = Number(stamp.contextTime);
+      if (Number.isFinite(performanceTime) && Number.isFinite(stampedContextTime)) {
+        contextTime = stampedContextTime + ((performance.now() - performanceTime) / 1000);
+      }
+    } catch {}
+  }
+  const elapsed = contextTime - playback.startTime;
+  if (!Number.isFinite(elapsed)) return null;
+  return (playback.seekStartSeconds || 0) + elapsed;
+}
+
 function getMidiPlaybackPositionSeconds() {
   const playback = midiState.playback;
   const duration = Math.max(0.1, playback.duration || 0);
   if (playback.playing && playback.sequencer) {
+    const audioClockTime = getAudioClockSeconds(playback);
+    if (Number.isFinite(audioClockTime)) {
+      playback.positionSeconds = clamp(audioClockTime, 0, duration);
+      return playback.positionSeconds;
+    }
     let highResolutionTime = Number(playback.sequencer.currentHighResolutionTime);
     if (Number.isFinite(highResolutionTime) && highResolutionTime > duration * 4 && highResolutionTime / 1000 <= duration * 1.25) {
       highResolutionTime /= 1000;
@@ -1192,9 +1218,22 @@ function getMidiPlaybackPositionSeconds() {
   return clamp(playback.positionSeconds || 0, 0, duration);
 }
 
+function getMidiDisplayClockSeconds() {
+  const playback = midiState.playback;
+  if (playback.playing) return getMidiPlaybackPositionSeconds();
+  if (Number.isFinite(playback.visualTailStartPerf) && Number.isFinite(playback.visualTailStartPosition)) {
+    const elapsed = (performance.now() / 1000) - playback.visualTailStartPerf;
+    const tailSeconds = playback.visualTailSeconds || 0;
+    if (elapsed >= 0 && elapsed <= tailSeconds) {
+      return playback.visualTailStartPosition + elapsed;
+    }
+  }
+  return clamp(playback.positionSeconds || 0, 0, Math.max(0.1, playback.duration || 0));
+}
+
 function getGuideClockSeconds() {
-  if (midiState.playback.playing) {
-    return getMidiPlaybackPositionSeconds();
+  if (midiState.playback.playing || Number.isFinite(midiState.playback.visualTailStartPerf) || midiState.playback.duration > 0) {
+    return getMidiDisplayClockSeconds();
   }
   if (micState.captureClock) {
     return Math.max(0, performance.now() / 1000 - micState.captureClock);
@@ -1424,6 +1463,9 @@ async function playMidiTrack(startSeconds = 0) {
   playback.duration = Math.max(0.1, ...(tracks || []).map((track) => track.duration || 0));
   playback.positionSeconds = clamp(startSeconds, 0, playback.duration);
   playback.seekStartSeconds = playback.positionSeconds;
+  playback.visualTailStartPerf = null;
+  playback.visualTailStartPosition = null;
+  playback.visualTailSeconds = 0;
   playback.sequencer.currentTime = playback.positionSeconds;
   await playCountIn(playback);
   if (playback.sessionId !== sessionId) return;
@@ -1437,12 +1479,30 @@ async function playMidiTrack(startSeconds = 0) {
   clearMidiPlaybackTimer();
   playback.timer = window.setInterval(() => {
     const seq = midiState.playback.sequencer;
-    if (!seq || !midiState.playback.playing) return;
-    midiState.playback.positionSeconds = getMidiPlaybackPositionSeconds();
-    updateMidiPlaybackUi(midiState.playback.positionSeconds);
+    if (!seq) return;
+    if (midiState.playback.playing) {
+      midiState.playback.positionSeconds = getMidiPlaybackPositionSeconds();
+      updateMidiPlaybackUi(midiState.playback.positionSeconds);
+    } else if (Number.isFinite(midiState.playback.visualTailStartPerf)) {
+      const elapsed = (performance.now() / 1000) - midiState.playback.visualTailStartPerf;
+      if (elapsed > (midiState.playback.visualTailSeconds || 0)) {
+        midiState.playback.visualTailStartPerf = null;
+        midiState.playback.visualTailStartPosition = null;
+        midiState.playback.visualTailSeconds = 0;
+        clearMidiPlaybackTimer();
+        refreshMidiCharts();
+        return;
+      }
+    } else {
+      return;
+    }
     refreshMidiCharts();
     if (!seq.paused && midiState.playback.positionSeconds >= midiState.playback.duration - 0.03) {
-      stopMidiPlayback();
+      midiState.playback.positionSeconds = midiState.playback.duration;
+      midiState.playback.visualTailStartPerf = performance.now() / 1000;
+      midiState.playback.visualTailStartPosition = midiState.playback.duration;
+      midiState.playback.visualTailSeconds = (20 / getGraphScale()) / 2 + 0.8;
+      stopMidiPlayback({ keepVisualTail: true });
     }
   }, 50);
 }
@@ -1928,6 +1988,9 @@ const midiState = {
     notes: [],
     playing: false,
     sessionId: 0,
+    visualTailStartPerf: null,
+    visualTailStartPosition: null,
+    visualTailSeconds: 0,
   },
 };
 
@@ -1978,6 +2041,9 @@ function resetMidiPlaybackState() {
   midiState.playback.positionSeconds = 0;
   midiState.playback.duration = 0;
   midiState.playback.notes = [];
+  midiState.playback.visualTailStartPerf = null;
+  midiState.playback.visualTailStartPosition = null;
+  midiState.playback.visualTailSeconds = 0;
   if (els.midiPlay) els.midiPlay.textContent = "再生";
   updateMidiPlaybackUi(0);
 }
@@ -2334,7 +2400,7 @@ async function stopMic() {
 
 async function loadMidiFile(file) {
   if (!file) return;
-  stopMidiPlayback();
+  stopMidiPlayback({ resetPosition: true, resetDuration: true });
   resetMidiDebugLog();
   logMidi(`ファイル選択: ${file.name} (${file.size} bytes)`);
   setText(els.midiExcludeStatus, `読み込み中: ${file.name}`);
@@ -2393,7 +2459,7 @@ async function loadMidiFile(file) {
 async function loadDefaultMidiSong(songId) {
   const song = defaultMidiSongs[songId];
   if (!song) return;
-  stopMidiPlayback();
+  stopMidiPlayback({ resetPosition: true, resetDuration: true });
   resetMidiDebugLog();
   setText(els.midiExcludeStatus, `読み込み中: ${song.title}`);
   setText(els.midiTopStatus, "読み込み中");
