@@ -3,35 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SingLab | Real-time Singing Pitch Analyzer</title>
-    <link rel="stylesheet" href="./styles.css?v=2026.08.01.2" />
+    <title>SingLab | Vocal Pitch Scoring</title>
+    <link rel="stylesheet" href="./styles.css?v=2026.08.01.3" />
   </head>
   <body>
     <div class="bg-orb orb-a"></div>
     <div class="bg-orb orb-b"></div>
 
     <main class="shell">
-      <header class="hero">
-        <div class="hero-copy"></div>
-      </header>
-
-      <section class="grid grid-top">
-        <section class="panel sidebar" id="workspace">
-          <div class="panel-head">
-            <h2>入力</h2>
-            <p>MIDI を選ぶと、お手本のトラック一覧が出ます。下の表示と合わせて使ってください。</p>
-          </div>
-
-          <div class="mini-stack">
-            <label class="field">
-              <span>MIDI ファイル</span>
-              <input id="midi-file" type="file" accept=".mid,.midi,audio/midi" />
-            </label>
-
-            <label class="field default-midi-field">
-              <span>プリセット曲</span>
-              <select id="default-midi" class="default-midi-select">
-                <option value="">選択してください</option>
+      <section class="panel scoring-layout" id="workspace">
+        <section class="top-controls" aria-label="MIDI とお手本">
+          <div class="control-card midi-source-card">
+            <div class="control-title">
+              <h2>MIDI選択</h2>
+              <span id="midi-top-status">未読込</span>
+            </div>
+            <div class="midi-source-grid">
+              <label class="file-pill">
+                <input id="midi-file" type="file" accept=".mid,.midi,audio/midi" />
+                <span>ファイルを選択</span>
+              </label>
+              <select id="default-midi" class="default-midi-select" aria-label="プリセット曲">
+                <option value="">プリセットを選択</option>
                 <option value="jiyu_ni_naritai_chorus">M2 自由になりたい（別紙コーラス）</option>
                 <option value="jiyu_wa_ikaga">M5 自由はいかが</option>
                 <option value="yamerarenai">M8 やめられない</option>
@@ -39,234 +32,177 @@
                 <option value="kaeritai">M14 帰りたい</option>
                 <option value="glass_no_kutsu">ガラスの靴</option>
               </select>
-            </label>
+            </div>
+          </div>
 
-            <label class="field legacy-voice-range">
-              <span>音域</span>
-              <select id="voice-range-legacy" class="voice-range-select">
+          <div class="control-card guide-card">
+            <div class="control-title">
+              <h2>MIDIお手本</h2>
+              <span id="midi-top-selected">トラック未選択</span>
+            </div>
+            <select id="midi-part-list" class="midi-part-select" aria-label="お手本パート">
+              <option value="">MIDIを読み込んでください</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="chart-card compact-card pitch-panel">
+          <div class="chart-head">
+            <h3>リアルタイム・ピッチグラフ</h3>
+            <span id="mic-status">停止中</span>
+          </div>
+          <canvas id="mic-chart" width="1200" height="520"></canvas>
+
+          <div class="transport-row" aria-label="再生と採点">
+            <button class="button primary" id="mic-start" type="button">再生・採点開始</button>
+            <button class="button secondary" id="mic-stop" type="button">停止</button>
+            <div class="seek-inline">
+              <span id="midi-time-label">00:00 / 00:00</span>
+              <input id="midi-seek" type="range" min="0" max="100" value="0" />
+            </div>
+            <div class="volume-inline">
+              <span id="midi-volume-label">音量 70%</span>
+              <input id="midi-volume" type="range" min="0" max="100" value="70" />
+            </div>
+          </div>
+
+          <div class="graph-option-row">
+            <label>
+              <span>声域</span>
+              <select id="voice-range" class="voice-range-select">
                 <option value="male">男性</option>
                 <option value="female">女性</option>
               </select>
             </label>
-
-            <div class="chart-card mini-control-card">
-              <div class="chart-head">
-                <h3>MIDI お手本</h3>
-                <span id="midi-top-status">未読込</span>
-              </div>
-              <div class="midi-track-meta" id="midi-top-selected">トラック未選択</div>
-              <div class="midi-card-grid">
-                <div class="midi-card-main">
-                  <select id="midi-part-list" class="midi-part-select"></select>
-                  <div class="midi-track-actions">
-                    <button class="button secondary" id="midi-top-auto-exclude" type="button">自動選択</button>
-                    <button class="button secondary" id="midi-top-use-score" type="button">差分を更新</button>
-                  </div>
-                </div>
-                <div class="midi-card-side">
-                  <div class="midi-debug-log" id="midi-debug-log">MIDI の読み込み待ち</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="chart-card compact-card">
-              <div class="chart-head">
-                <h3>リアルタイム・ピッチグラフ</h3>
-                <span id="mic-status">停止中</span>
-              </div>
-              <canvas id="mic-chart" width="900" height="240"></canvas>
-              <div class="graph-option-row">
-                <label>
-                  <span>声域</span>
-                  <select id="voice-range" class="voice-range-select">
-                    <option value="male">男性</option>
-                    <option value="female">女性</option>
-                  </select>
-                </label>
-                <label>
-                  <span>横幅</span>
-                  <select id="graph-scale" class="graph-option-select">
-                    <option value="3">3倍</option>
-                    <option value="2" selected>2倍</option>
-                    <option value="1">1倍</option>
-                    <option value="0.5">1/2倍</option>
-                    <option value="0.333333">1/3倍</option>
-                  </select>
-                </label>
-                <label>
-                  <span>歌声閾値</span>
-                  <select id="voice-threshold" class="graph-option-select">
-                    <option value="low">低め</option>
-                    <option value="normal" selected>標準</option>
-                    <option value="high">高め</option>
-                    <option value="strict">かなり高め</option>
-                  </select>
-                </label>
-                <label>
-                  <span>カウントイン</span>
-                  <select id="count-in" class="graph-option-select">
-                    <option value="auto" selected>2小節+自動補正</option>
-                    <option value="on">2小節のみ</option>
-                    <option value="off">なし</option>
-                  </select>
-                </label>
-                <label>
-                  <span>お手本補正</span>
-                  <select id="guide-offset" class="graph-option-select">
-                    <option value="-5000">早める 5.0秒</option>
-                    <option value="-4000">早める 4.0秒</option>
-                    <option value="-3000">早める 3.0秒</option>
-                    <option value="-2000">早める 2.0秒</option>
-                    <option value="-1500">早める 1.5秒</option>
-                    <option value="-1000">早める 1.0秒</option>
-                    <option value="-500">早める 500ms</option>
-                    <option value="-400">早める 400ms</option>
-                    <option value="-300">早める 300ms</option>
-                    <option value="-250">早める 250ms</option>
-                    <option value="-200">早める 200ms</option>
-                    <option value="-150">早める 150ms</option>
-                    <option value="-100">早める 100ms</option>
-                    <option value="-75">早める 75ms</option>
-                    <option value="-50">早める 50ms</option>
-                    <option value="-25">早める 25ms</option>
-                    <option value="0" selected>0ms</option>
-                    <option value="25">遅らせる 25ms</option>
-                    <option value="50">遅らせる 50ms</option>
-                    <option value="75">遅らせる 75ms</option>
-                    <option value="100">遅らせる 100ms</option>
-                    <option value="150">遅らせる 150ms</option>
-                    <option value="200">遅らせる 200ms</option>
-                    <option value="250">遅らせる 250ms</option>
-                    <option value="300">遅らせる 300ms</option>
-                    <option value="400">遅らせる 400ms</option>
-                    <option value="500">遅らせる 500ms</option>
-                    <option value="1000">遅らせる 1.0秒</option>
-                    <option value="1500">遅らせる 1.5秒</option>
-                    <option value="2000">遅らせる 2.0秒</option>
-                    <option value="3000">遅らせる 3.0秒</option>
-                    <option value="4000">遅らせる 4.0秒</option>
-                    <option value="5000">遅らせる 5.0秒</option>
-                  </select>
-                </label>
-                <label>
-                  <span>お手本音域</span>
-                  <select id="guide-octave" class="graph-option-select">
-                    <option value="auto" selected>自動</option>
-                    <option value="-24">2オクターブ下</option>
-                    <option value="-12">1オクターブ下</option>
-                    <option value="0">そのまま</option>
-                    <option value="12">1オクターブ上</option>
-                    <option value="24">2オクターブ上</option>
-                  </select>
-                </label>
-                <label>
-                  <span>お手本上下</span>
-                  <select id="guide-transpose" class="graph-option-select">
-                    <option value="-12">-12 半音</option>
-                    <option value="-11">-11 半音</option>
-                    <option value="-10">-10 半音</option>
-                    <option value="-9">-9 半音</option>
-                    <option value="-8">-8 半音</option>
-                    <option value="-7">-7 半音</option>
-                    <option value="-6">-6 半音</option>
-                    <option value="-5">-5 半音</option>
-                    <option value="-4">-4 半音</option>
-                    <option value="-3">-3 半音</option>
-                    <option value="-2">-2 半音</option>
-                    <option value="-1">-1 半音</option>
-                    <option value="0" selected>0 半音</option>
-                    <option value="1">+1 半音</option>
-                    <option value="2">+2 半音</option>
-                    <option value="3">+3 半音</option>
-                    <option value="4">+4 半音</option>
-                    <option value="5">+5 半音</option>
-                    <option value="6">+6 半音</option>
-                    <option value="7">+7 半音</option>
-                    <option value="8">+8 半音</option>
-                    <option value="9">+9 半音</option>
-                    <option value="10">+10 半音</option>
-                    <option value="11">+11 半音</option>
-                    <option value="12">+12 半音</option>
-                  </select>
-                </label>
-                <label>
-                  <span>検出</span>
-                  <select id="pitch-model" class="graph-option-select">
-                    <option value="hybrid" selected>Hybrid</option>
-                    <option value="yin">YIN</option>
-                    <option value="mpm">MPM</option>
-                    <option value="acf">ACF</option>
-                    <option value="amdf">AMDF</option>
-                    <option value="crepe" disabled>CREPE 要モデル</option>
-                    <option value="spice" disabled>SPICE 要モデル</option>
-                    <option value="basic-pitch" disabled>Basic Pitch 録音後</option>
-                  </select>
-                </label>
-              </div>
-              <div class="actions compact">
-                <button class="button primary" id="mic-start" type="button">再生・採点開始</button>
-                <button class="button secondary" id="mic-stop" type="button">停止</button>
-                <button class="button secondary" id="metronome-toggle" type="button">メトロノーム</button>
-                <button class="button secondary" id="save-take" type="button">テイク保存</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel stage" id="monitor">
-          <div class="chart-card" hidden>
-            <span id="audio-status">音声停止中</span>
-            <span id="audio-progress">0.0 / 0.0 sec</span>
-            <span id="audio-note">--</span>
-            <span id="sync-status">推定 0.0s / 補正 0.0s / 合計 0.0s</span>
-            <button id="audio-play" type="button">音声再生</button>
-            <button id="audio-stop" type="button">音声停止</button>
-            <button id="sync-start" type="button">音声+録音</button>
-            <button id="auto-delay" type="button">無音検出</button>
-            <input id="sync-delay" type="number" value="1.5" />
-            <button id="sync-nudge-minus" type="button">-0.1s</button>
-            <button id="sync-nudge-plus" type="button">+0.1s</button>
-            <button id="sync-reset" type="button">補正リセット</button>
-          </div>
-
-          <div class="chart-card" hidden>
-            <span id="chart-caption">声種に合わせた2オクターブ表示</span>
-            <span id="summary-accuracy">--</span>
-            <span id="summary-pitch">--</span>
-            <span id="summary-tempo">--</span>
-            <span id="result-pitch-match">--</span>
-            <span id="result-onset">--</span>
-            <span id="result-duration">--</span>
-            <span id="result-tempo-diff">--</span>
-          </div>
-
-          <div class="chart-card" hidden>
-            <span id="score-follow-status">未開始</span>
-            <canvas id="score-follow-chart" width="900" height="120"></canvas>
-          </div>
-
-          <div class="chart-card" hidden>
-            <table><tbody id="note-table"></tbody></table>
+            <label>
+              <span>横幅</span>
+              <select id="graph-scale" class="graph-option-select">
+                <option value="3">3倍</option>
+                <option value="2" selected>2倍</option>
+                <option value="1">1倍</option>
+                <option value="0.5">1/2倍</option>
+                <option value="0.333333">1/3倍</option>
+              </select>
+            </label>
+            <label>
+              <span>歌声閾値</span>
+              <select id="voice-threshold" class="graph-option-select">
+                <option value="low">低め</option>
+                <option value="normal" selected>標準</option>
+                <option value="high">高め</option>
+                <option value="strict">かなり高め</option>
+              </select>
+            </label>
+            <label>
+              <span>開始</span>
+              <select id="count-in" class="graph-option-select">
+                <option value="auto" selected>2小節+自動補正</option>
+                <option value="on">2小節のみ</option>
+                <option value="off">なし</option>
+              </select>
+            </label>
+            <label>
+              <span>時刻補正</span>
+              <select id="guide-offset" class="graph-option-select">
+                <option value="-1000">早める 1.0秒</option>
+                <option value="-500">早める 500ms</option>
+                <option value="-300">早める 300ms</option>
+                <option value="-200">早める 200ms</option>
+                <option value="-100">早める 100ms</option>
+                <option value="-50">早める 50ms</option>
+                <option value="0" selected>0ms</option>
+                <option value="50">遅らせる 50ms</option>
+                <option value="100">遅らせる 100ms</option>
+                <option value="200">遅らせる 200ms</option>
+                <option value="300">遅らせる 300ms</option>
+                <option value="500">遅らせる 500ms</option>
+                <option value="1000">遅らせる 1.0秒</option>
+              </select>
+            </label>
+            <label>
+              <span>お手本音域</span>
+              <select id="guide-octave" class="graph-option-select">
+                <option value="auto" selected>自動</option>
+                <option value="-24">2オクターブ下</option>
+                <option value="-12">1オクターブ下</option>
+                <option value="0">そのまま</option>
+                <option value="12">1オクターブ上</option>
+                <option value="24">2オクターブ上</option>
+              </select>
+            </label>
+            <label>
+              <span>上下補正</span>
+              <select id="guide-transpose" class="graph-option-select">
+                <option value="-12">-12半音</option>
+                <option value="-7">-7半音</option>
+                <option value="-5">-5半音</option>
+                <option value="-3">-3半音</option>
+                <option value="-2">-2半音</option>
+                <option value="-1">-1半音</option>
+                <option value="0" selected>0半音</option>
+                <option value="1">+1半音</option>
+                <option value="2">+2半音</option>
+                <option value="3">+3半音</option>
+                <option value="5">+5半音</option>
+                <option value="7">+7半音</option>
+                <option value="12">+12半音</option>
+              </select>
+            </label>
+            <label>
+              <span>検出</span>
+              <select id="pitch-model" class="graph-option-select">
+                <option value="hybrid" selected>Hybrid</option>
+                <option value="yin">YIN</option>
+                <option value="mpm">MPM</option>
+                <option value="acf">ACF</option>
+                <option value="amdf">AMDF</option>
+              </select>
+            </label>
           </div>
         </section>
       </section>
     </main>
 
-    <div class="bottom-transport" aria-label="再生位置">
-      <div class="transport-time" id="midi-time-label">00:00 / 00:00</div>
-      <input id="midi-seek" type="range" min="0" max="100" value="0" />
-      <div class="midi-volume-wrap transport-volume">
-        <span id="midi-volume-label">音量 70%</span>
-        <input id="midi-volume" type="range" min="0" max="100" value="70" />
-      </div>
+    <div class="app-version" id="app-version">SingLab version loading...</div>
+
+    <div hidden>
+      <span id="midi-exclude-status">MIDI 未読込</span>
+      <button id="midi-top-auto-exclude" type="button">自動選択</button>
+      <button id="midi-top-use-score" type="button">差分を更新</button>
+      <div id="midi-debug-log">MIDI の読み込み待ち</div>
+      <button id="metronome-toggle" type="button">メトロノーム</button>
+      <button id="save-take" type="button">テイク保存</button>
+      <button id="load-demo" type="button">デモ</button>
+      <button id="midi-play" type="button">再生</button>
+      <button id="midi-stop" type="button">停止</button>
+      <span id="mic-note">--</span>
+      <span id="mic-frequency">--</span>
+      <span id="mic-confidence">--</span>
+      <span id="mic-trend">--</span>
+      <span id="audio-status">音声停止中</span>
+      <span id="audio-progress">0.0 / 0.0 sec</span>
+      <span id="audio-note">--</span>
+      <span id="sync-status">推定 0.0s / 補正 0.0s / 合計 0.0s</span>
+      <button id="audio-play" type="button">音声再生</button>
+      <button id="audio-stop" type="button">音声停止</button>
+      <button id="sync-start" type="button">音声+録音</button>
+      <button id="auto-delay" type="button">無音検出</button>
+      <input id="sync-delay" type="number" value="1.5" />
+      <button id="sync-nudge-minus" type="button">-0.1s</button>
+      <button id="sync-nudge-plus" type="button">+0.1s</button>
+      <button id="sync-reset" type="button">補正リセット</button>
+      <span id="summary-accuracy">--</span>
+      <span id="summary-pitch">--</span>
+      <span id="summary-tempo">--</span>
+      <span id="result-pitch-match">--</span>
+      <span id="result-onset">--</span>
+      <span id="result-duration">--</span>
+      <span id="result-tempo-diff">--</span>
+      <span id="score-follow-status">未開始</span>
+      <canvas id="score-follow-chart" width="900" height="120"></canvas>
+      <table><tbody id="note-table"></tbody></table>
     </div>
 
-    <button id="load-demo" type="button" hidden>デモ</button>
-    <span id="mic-note" hidden>--</span>
-    <span id="mic-frequency" hidden>--</span>
-    <span id="mic-confidence" hidden>--</span>
-    <span id="mic-trend" hidden>--</span>
-    <div class="app-version" id="app-version">SingLab version loading...</div>
-    <script src="./app.js?v=2026.08.01.2"></script>
+    <script src="./app.js?v=2026.08.01.3"></script>
   </body>
 </html>
