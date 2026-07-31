@@ -61,7 +61,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.01.5";
+const APP_VERSION = "2026.08.01.6";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 
@@ -329,6 +329,20 @@ function getGuideOctaveShiftSemitones(track, minMidi, maxMidi) {
 function getGuideTransposeSemitones() {
   const semitones = Number(els.guideTranspose?.value || 0);
   return Number.isFinite(semitones) ? semitones : 0;
+}
+
+function setGuideTransposeSemitones(value) {
+  if (!els.guideTranspose) return;
+  const semitones = clamp(Math.round(Number(value) || 0), -24, 24);
+  let option = Array.from(els.guideTranspose.options).find((item) => Number(item.value) === semitones);
+  if (!option) {
+    option = document.createElement("option");
+    option.value = String(semitones);
+    option.textContent = `${semitones >= 0 ? "+" : ""}${semitones}半音`;
+    els.guideTranspose.appendChild(option);
+  }
+  els.guideTranspose.value = String(semitones);
+  refreshMidiCharts();
 }
 
 function getGuidePitchShiftSemitones(track, minMidi, maxMidi) {
@@ -946,32 +960,42 @@ function scoreMidiTrack(track) {
 
 function getSelectedMidiTrack() {
   if (!midiState.tracks?.length) return null;
-  return midiState.tracks.find((track) => track.id === midiState.selectedTrackId) || midiState.tracks[0] || null;
+  const selectedIds = midiState.selectedTrackIds?.length ? midiState.selectedTrackIds : [midiState.selectedTrackId];
+  return midiState.tracks.find((track) => track.id === selectedIds[0]) || midiState.tracks[0] || null;
 }
 
 function getGuideDisplayTracks() {
   if (!midiState.tracks?.length) return [];
   if (midiState.guideDisplayMode === "all") return midiState.tracks;
-  const selectedTrack = getSelectedMidiTrack();
-  return selectedTrack ? [selectedTrack] : [];
+  const selectedIds = new Set(midiState.selectedTrackIds?.length ? midiState.selectedTrackIds : [midiState.selectedTrackId]);
+  const selectedTracks = midiState.tracks.filter((track) => selectedIds.has(track.id));
+  return selectedTracks.length ? selectedTracks : [getSelectedMidiTrack()].filter(Boolean);
 }
 
-function selectMidiTrack(trackId) {
-  if (trackId === "__all__") {
+function selectMidiTracks(trackIds) {
+  const ids = Array.isArray(trackIds) ? trackIds.filter(Boolean) : [trackIds].filter(Boolean);
+  if (ids.includes("__all__")) {
     midiState.guideDisplayMode = "all";
+    midiState.selectedTrackIds = midiState.tracks.map((track) => track.id);
   } else {
     midiState.guideDisplayMode = "selected";
-    midiState.selectedTrackId = trackId;
+    midiState.selectedTrackIds = ids.length ? ids : [midiState.tracks[0]?.id].filter(Boolean);
+    midiState.selectedTrackId = midiState.selectedTrackIds[0] || null;
   }
   micState.lastDisplayedMidi = null;
   renderMidiTrackList();
   refreshMidiCharts();
 }
 
+function selectMidiTrack(trackId) {
+  selectMidiTracks([trackId]);
+}
+
 function chooseBestMidiTrack() {
   if (!midiState.tracks?.length) return;
   const sorted = [...midiState.tracks].sort((a, b) => scoreMidiTrack(b) - scoreMidiTrack(a));
   midiState.selectedTrackId = sorted[0]?.id || midiState.tracks[0].id;
+  midiState.selectedTrackIds = [midiState.selectedTrackId].filter(Boolean);
   midiState.guideDisplayMode = "selected";
   micState.lastDisplayedMidi = null;
   renderMidiTrackList();
@@ -993,21 +1017,26 @@ function renderMidiTrackList() {
   els.midiPartList.disabled = false;
   const allOption = document.createElement("option");
   allOption.value = "__all__";
-  allOption.textContent = `全パート表示 · ${tracks.length}トラック · 採点基準は選択中パート`;
+  allOption.textContent = `全パート表示 · ${tracks.length}トラック`;
   els.midiPartList.appendChild(allOption);
+  const selectedIds = new Set(midiState.selectedTrackIds?.length ? midiState.selectedTrackIds : [midiState.selectedTrackId].filter(Boolean));
   tracks.forEach((track) => {
     const avgPitchText = track.averagePitch != null ? noteNameFromMidi(track.averagePitch) : "--";
     const option = document.createElement("option");
     option.value = track.id;
     option.textContent = `${track.name} · ${track.instrumentSummary || "不明"} · ${track.notes.length}音 · ${track.duration.toFixed(1)}秒 · ${avgPitchText} · ${scoreMidiTrack(track).toFixed(1)}`;
+    option.selected = midiState.guideDisplayMode !== "all" && selectedIds.has(track.id);
     els.midiPartList.appendChild(option);
   });
-  els.midiPartList.value = midiState.guideDisplayMode === "all" ? "__all__" : (midiState.selectedTrackId || tracks[0]?.id || "");
+  allOption.selected = midiState.guideDisplayMode === "all";
   const selectedTrack = getSelectedMidiTrack();
   const allMode = midiState.guideDisplayMode === "all";
-  setText(els.midiExcludeStatus, allMode ? `全パート表示中 / 採点基準: ${selectedTrack?.name || "--"}` : (selectedTrack ? `選択中: ${selectedTrack.name}` : `MIDI 読込済み (${tracks.length}トラック)`));
-  setText(els.midiTopStatus, allMode ? `全パート表示 (${tracks.length}トラック)` : (selectedTrack ? "選択中" : `読込済み (${tracks.length}トラック)`));
-  setText(els.midiTopSelected, allMode ? `お手本: 全パート / 採点: ${selectedTrack?.name || "--"}` : (selectedTrack ? `お手本: ${selectedTrack.name}` : "トラック未選択"));
+  const displayTracks = getGuideDisplayTracks();
+  const displayCount = allMode ? tracks.length : displayTracks.length;
+  const displayNames = allMode ? "全パート" : displayTracks.map((track) => track.name).join(" + ");
+  setText(els.midiExcludeStatus, allMode ? `全パート表示中 / 採点基準: ${selectedTrack?.name || "--"}` : (selectedTrack ? `選択中: ${displayNames}` : `MIDI 読込済み (${tracks.length}トラック)`));
+  setText(els.midiTopStatus, allMode ? `全パート (${tracks.length})` : (selectedTrack ? `${displayCount}パート` : `読込済み (${tracks.length})`));
+  setText(els.midiTopSelected, selectedTrack ? `採点: ${selectedTrack.name}` : "トラック未選択");
 }
 
 function buildMidiComparison(track, micSegments) {
@@ -1879,9 +1908,9 @@ function drawMicChart(history, expectedTarget) {
         const alpha = allMode
           ? (trackIsSelected ? 0.3 + noteStrength * 0.34 : 0.11 + noteStrength * 0.18)
           : 0.22 + noteStrength * 0.42;
-        ctx.fillStyle = trackIsSelected
-          ? `rgba(126,224,184,${clamp(alpha + selectedBoost, 0.12, 0.82)})`
-          : `rgba(122,183,255,${clamp(alpha, 0.08, 0.42)})`;
+        ctx.fillStyle = allMode && !trackIsSelected
+          ? `rgba(122,183,255,${clamp(alpha, 0.08, 0.42)})`
+          : `rgba(126,224,184,${clamp(alpha + selectedBoost, 0.12, 0.82)})`;
         ctx.beginPath();
         ctx.roundRect(Math.min(x1, x2), y - (trackIsSelected ? 8 : 6), Math.max(5, Math.abs(x2 - x1)), trackIsSelected ? 16 : 12, trackIsSelected ? 8 : 6);
         ctx.fill();
@@ -2049,6 +2078,7 @@ const midiState = {
   midiBuffer: null,
   tracks: [],
   selectedTrackId: null,
+  selectedTrackIds: [],
   guideDisplayMode: "selected",
   parsed: null,
   playback: {
@@ -2504,6 +2534,7 @@ async function loadMidiFile(file) {
     midiState.parsed = parsed;
     midiState.tracks = guideTracks;
     midiState.selectedTrackId = guideTracks[0]?.id || null;
+    midiState.selectedTrackIds = [midiState.selectedTrackId].filter(Boolean);
     midiState.guideDisplayMode = "selected";
     if (!guideTracks.length) {
       setText(els.midiExcludeStatus, "MIDI は読めましたが、音符が見つかりませんでした");
@@ -2524,6 +2555,7 @@ async function loadMidiFile(file) {
     midiState.parsed = null;
     midiState.tracks = [];
     midiState.selectedTrackId = null;
+    midiState.selectedTrackIds = [];
     midiState.guideDisplayMode = "selected";
     renderMidiTrackList();
     refreshMidiCharts();
@@ -2621,6 +2653,63 @@ function init() {
   renderMidiComparison();
 }
 
+function getSelectedMidiPartValues() {
+  if (!els.midiPartList) return [];
+  return Array.from(els.midiPartList.selectedOptions || []).map((option) => option.value).filter(Boolean);
+}
+
+function setupMidiPartMultiSelect() {
+  if (!els.midiPartList) return;
+  els.midiPartList.addEventListener("mousedown", (event) => {
+    if (event.target?.tagName !== "OPTION") return;
+    event.preventDefault();
+    const option = event.target;
+    if (option.value === "__all__") {
+      Array.from(els.midiPartList.options).forEach((item) => {
+        item.selected = item.value === "__all__";
+      });
+    } else {
+      const allOption = Array.from(els.midiPartList.options).find((item) => item.value === "__all__");
+      if (allOption) allOption.selected = false;
+      option.selected = !option.selected;
+      const anyTrackSelected = Array.from(els.midiPartList.options).some((item) => item.value !== "__all__" && item.selected);
+      if (!anyTrackSelected) option.selected = true;
+    }
+    els.midiPartList.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function setupGuidePitchSwipe() {
+  const canvas = els.micChart;
+  if (!canvas) return;
+  let gesture = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    if (event.button != null && event.button !== 0) return;
+    gesture = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startTranspose: getGuideTransposeSemitones(),
+      appliedDelta: 0,
+    };
+    canvas.setPointerCapture?.(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaSemitones = Math.round((gesture.startY - event.clientY) / 22);
+    if (deltaSemitones === gesture.appliedDelta) return;
+    gesture.appliedDelta = deltaSemitones;
+    setGuideTransposeSemitones(gesture.startTranspose + deltaSemitones);
+    event.preventDefault();
+  }, { passive: false });
+  const finish = (event) => {
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    canvas.releasePointerCapture?.(event.pointerId);
+    gesture = null;
+  };
+  canvas.addEventListener("pointerup", finish);
+  canvas.addEventListener("pointercancel", finish);
+}
+
 els.audioPlay?.addEventListener("click", playAudioFile);
 els.audioStop?.addEventListener("click", stopAudioPlayback);
 els.syncStart?.addEventListener("click", () => {
@@ -2670,8 +2759,10 @@ els.guideOffset?.addEventListener("change", refreshMidiCharts);
 els.guideOctave?.addEventListener("change", refreshMidiCharts);
 els.guideTranspose?.addEventListener("change", refreshMidiCharts);
 els.pitchModel?.addEventListener("change", refreshMidiCharts);
+setupMidiPartMultiSelect();
+setupGuidePitchSwipe();
 els.midiPartList?.addEventListener("change", () => {
-  selectMidiTrack(els.midiPartList.value);
+  selectMidiTracks(getSelectedMidiPartValues());
 });
 els.midiAutoExclude?.addEventListener("click", chooseBestMidiTrack);
 els.midiUseScore?.addEventListener("click", refreshMidiCharts);
