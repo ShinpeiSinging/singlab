@@ -1226,3 +1226,192 @@ body {
     display: none;
   }
 }
+
+/* Fit the whole scorer into one viewport whenever possible. */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.shell {
+  height: 100dvh;
+  padding: 6px 0;
+}
+
+.scoring-layout {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100dvh - 12px);
+  min-height: 0;
+  gap: 6px;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.top-controls {
+  min-height: 0;
+}
+
+.control-card {
+  padding: 7px 9px;
+  border-radius: 14px;
+}
+
+.control-title {
+  margin-bottom: 5px;
+}
+
+.control-title h2 {
+  font-size: 0.86rem;
+}
+
+.control-title span {
+  font-size: 0.68rem;
+}
+
+.file-pill,
+.default-midi-select,
+.midi-part-select {
+  min-height: 32px;
+  font-size: 0.78rem;
+}
+
+.pitch-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-height: 0;
+  overflow: hidden;
+  gap: 6px;
+  padding: 7px;
+}
+
+.pitch-panel .chart-head h3 {
+  font-size: 0.92rem;
+}
+
+.pitch-panel .chart-head span {
+  font-size: 0.76rem;
+}
+
+.pitch-panel canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.transport-row {
+  gap: 6px;
+}
+
+.transport-row .button {
+  min-height: 32px;
+  padding: 6px 11px;
+  font-size: 0.8rem;
+}
+
+.seek-inline span,
+.volume-inline span {
+  font-size: 0.68rem;
+}
+
+.graph-option-row {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.graph-option-row label {
+  gap: 1px;
+}
+
+.graph-option-row label span {
+  font-size: 0.58rem;
+}
+
+.graph-option-row select {
+  min-height: 26px;
+  padding: 2px 5px;
+  border-radius: 9px;
+  font-size: 0.64rem;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    width: calc(100% - 8px);
+    padding: 4px 0;
+  }
+
+  .scoring-layout {
+    height: calc(100dvh - 8px);
+    gap: 5px;
+    padding: 5px;
+  }
+
+  .top-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .midi-source-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .file-pill {
+    padding: 0 10px;
+  }
+
+  .transport-row {
+    grid-template-columns: auto auto minmax(120px, 1fr) minmax(92px, 150px);
+  }
+
+  .volume-inline {
+    grid-column: auto;
+  }
+
+  .graph-option-row {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  html,
+  body {
+    overflow: hidden;
+  }
+
+  .top-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .midi-source-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .control-title h2 {
+    display: none;
+  }
+
+  .control-title {
+    justify-content: flex-end;
+    min-height: 0;
+  }
+
+  .pitch-panel {
+    padding: 5px;
+    gap: 4px;
+  }
+
+  .transport-row {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .volume-inline {
+    display: none;
+  }
+
+  .graph-option-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+  }
+}
