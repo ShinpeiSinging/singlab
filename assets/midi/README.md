@@ -11,7 +11,7 @@ Put the bundled preset songs here before publishing:
 
 These files are loaded directly by the browser from GitHub Pages.
 
-Run this from the repository root on the Windows PC that can access `G:`:
+Put source files in `preset-midi-drop/`, then run this from the repository root:
 
 ```powershell
 .\scripts\copy_preset_midi.ps1

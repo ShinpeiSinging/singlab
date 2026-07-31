@@ -12,3 +12,7 @@ api.py
 
 # Local publishing helper for this checkout.
 publish_to_github.ps1
+
+# Local drop zone for preset MIDI sources. Commit copied files under assets/midi/.
+preset-midi-drop/*.mid
+preset-midi-drop/*.midi

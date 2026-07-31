@@ -1,55 +1,65 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$dropDir = Join-Path $repoRoot "preset-midi-drop"
 $targetDir = Join-Path $repoRoot "assets\midi"
 New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+New-Item -ItemType Directory -Force -Path $dropDir | Out-Null
 
 $presets = @(
   @{
-    Source = "G:\マイドライブ\ライブ\202508\音取り音源\幸せをつかむため\幸せをつかむため.mid"
+    DropFile = "幸せをつかむため.mid"
     Target = "shiawase-wo-tsukamu-tame.mid"
   },
   @{
-    Source = "G:\マイドライブ\ライブ\202608\midi\【0427】M2自由になりたい【別紙コーラス】.mid"
+    DropFile = "M2自由になりたい-別紙コーラス.mid"
     Target = "jiyu-ni-naritai-chorus.mid"
   },
   @{
-    Source = "G:\マイドライブ\ライブ\202608\midi\【原本】M8やめられない.mid"
+    DropFile = "M8やめられない.mid"
     Target = "yamerarenai.mid"
   },
   @{
-    Source = "G:\マイドライブ\ライブ\202608\midi\【原本】M9 魔法のりんご【0416更新】.mid"
+    DropFile = "M9魔法のりんご.mid"
     Target = "maho-no-ringo.mid"
   },
   @{
-    Source = "G:\マイドライブ\ライブ\202608\midi\【原本】M14帰りたい 1.mid"
+    DropFile = "M14帰りたい.mid"
     Target = "kaeritai.mid"
   },
   @{
-    Source = "G:\マイドライブ\ライブ\202608\midi\【原本】ガラスの靴.mid"
+    DropFile = "ガラスの靴.mid"
     Target = "glass-no-kutsu.mid"
   }
 )
 
 $missing = @()
+$copied = 0
 foreach ($preset in $presets) {
-  if (-not (Test-Path -LiteralPath $preset.Source)) {
-    $missing += $preset.Source
+  $dropSource = Join-Path $dropDir $preset.DropFile
+  $source = $null
+
+  if (Test-Path -LiteralPath $dropSource) {
+    $source = $dropSource
+  }
+
+  if (-not $source) {
+    $missing += ("{0} (drop: preset-midi-drop\{1})" -f $preset.Target, $preset.DropFile)
     continue
   }
 
   $target = Join-Path $targetDir $preset.Target
-  Copy-Item -LiteralPath $preset.Source -Destination $target -Force
+  Copy-Item -LiteralPath $source -Destination $target -Force
   $item = Get-Item -LiteralPath $target
-  Write-Host ("Copied {0} ({1:N0} bytes)" -f $preset.Target, $item.Length)
+  $copied += 1
+  Write-Host ("Copied {0} ({1:N0} bytes) from {2}" -f $preset.Target, $item.Length, $source)
 }
 
 if ($missing.Count -gt 0) {
   Write-Host ""
-  Write-Warning "Missing source files:"
+  Write-Warning "Missing preset source files:"
   $missing | ForEach-Object { Write-Warning $_ }
-  exit 1
 }
 
 Write-Host ""
-Write-Host "Preset MIDI files are ready in assets\midi."
+Write-Host ("Preset MIDI files are ready in assets\midi. Copied: {0}" -f $copied)
