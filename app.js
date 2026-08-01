@@ -61,9 +61,10 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.01.7";
+const APP_VERSION = "2026.08.01.8";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
+let pitchViewOffsetSemitones = 0;
 
 const defaultMidiSongs = {
   jiyu_ni_naritai_chorus: {
@@ -249,6 +250,22 @@ function getVoiceRangePreset() {
   return els.voiceRange?.value === "female"
     ? { label: "女性", minMidi: 60, maxMidi: 84, center: 72 }
     : { label: "男性", minMidi: 48, maxMidi: 72, center: 60 };
+}
+
+function getDisplayVoiceRangePreset() {
+  const base = getVoiceRangePreset();
+  return {
+    ...base,
+    minMidi: base.minMidi + pitchViewOffsetSemitones,
+    maxMidi: base.maxMidi + pitchViewOffsetSemitones,
+    center: base.center + pitchViewOffsetSemitones,
+  };
+}
+
+function setPitchViewOffsetSemitones(value) {
+  pitchViewOffsetSemitones = clamp(Math.round(Number(value) || 0), -24, 24);
+  micState.lastDisplayedMidi = null;
+  refreshMidiCharts();
 }
 
 function clamp(value, min, max) {
@@ -1864,7 +1881,7 @@ function drawMicChart(history, expectedTarget) {
   ctx.fillRect(0, 0, cssWidth, cssHeight);
 
   const valid = history.filter((item) => Number.isFinite(item.rawMidi ?? item.midi));
-  const preset = getVoiceRangePreset();
+  const preset = getDisplayVoiceRangePreset();
   const minMidi = preset.minMidi;
   const maxMidi = preset.maxMidi;
   const yFor = (midi) => midiToY(midi, minMidi, maxMidi, cssHeight);
@@ -1944,15 +1961,6 @@ function drawMicChart(history, expectedTarget) {
     ctx.setLineDash([]);
   }
 
-  const centerY = yFor(preset.center);
-  ctx.strokeStyle = "rgba(122,183,255,.18)";
-  ctx.setLineDash([2, 10]);
-  ctx.beginPath();
-  ctx.moveTo(48, centerY);
-  ctx.lineTo(cssWidth - 24, centerY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
   const samples = valid.filter((item) => item.time >= windowStart - 0.4 && item.time <= windowEnd + 0.2);
   let lastDisplayMidi = Number.isFinite(micState.lastDisplayedMidi) ? micState.lastDisplayedMidi : null;
   const points = [];
@@ -1960,9 +1968,7 @@ function drawMicChart(history, expectedTarget) {
     const rawMidi = Number(item.rawMidi ?? item.midi);
     const guideMidi = expectedTrack ? getDisplayedGuideMidiAtTime(expectedTrack, item.time, minMidi, maxMidi) : null;
     const fallbackReference = Number.isFinite(guideMidi) ? guideMidi : (Number.isFinite(lastDisplayMidi) ? lastDisplayMidi : preset.center);
-    const displayMidi = Number.isFinite(item.displayMidi)
-      ? item.displayMidi
-      : stabilizeMidiDisplay(rawMidi, fallbackReference, minMidi, maxMidi, lastDisplayMidi, item.confidence ?? 0);
+    const displayMidi = stabilizeMidiDisplay(rawMidi, fallbackReference, minMidi, maxMidi, lastDisplayMidi, item.confidence ?? 0);
     lastDisplayMidi = displayMidi;
     points.push({
       x: xForTime(item.time),
@@ -2703,7 +2709,7 @@ function setupGuidePitchSwipe() {
     gesture = {
       pointerId: event.pointerId,
       startY: event.clientY,
-      startTranspose: getGuideTransposeSemitones(),
+      startOffset: pitchViewOffsetSemitones,
       appliedDelta: 0,
     };
     canvas.setPointerCapture?.(event.pointerId);
@@ -2713,7 +2719,7 @@ function setupGuidePitchSwipe() {
     const deltaSemitones = Math.round((gesture.startY - event.clientY) / 22);
     if (deltaSemitones === gesture.appliedDelta) return;
     gesture.appliedDelta = deltaSemitones;
-    setGuideTransposeSemitones(gesture.startTranspose + deltaSemitones);
+    setPitchViewOffsetSemitones(gesture.startOffset + deltaSemitones);
     event.preventDefault();
   }, { passive: false });
   const finish = (event) => {
