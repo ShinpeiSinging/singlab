@@ -1,2 +1,0 @@
-Connector publish test at 2026-08-01T12:00:00+09:00
-This file is temporary and will be removed by the next connector call.
