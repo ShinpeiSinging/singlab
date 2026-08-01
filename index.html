@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SingLab | Vocal Pitch Scoring</title>
-    <link rel="stylesheet" href="./styles.css?v=2026.08.01.8" />
+    <link rel="stylesheet" href="./styles.css?v=2026.08.01.9" />
   </head>
   <body>
     <div class="bg-orb orb-a"></div>
@@ -68,13 +68,6 @@
 
           <div class="graph-option-row">
             <label>
-              <span>声域</span>
-              <select id="voice-range" class="voice-range-select">
-                <option value="male">男性</option>
-                <option value="female">女性</option>
-              </select>
-            </label>
-            <label>
               <span>横幅</span>
               <select id="graph-scale" class="graph-option-select">
                 <option value="3">3倍</option>
@@ -83,6 +76,20 @@
                 <option value="0.5">1/2倍</option>
                 <option value="0.333333">1/3倍</option>
               </select>
+            </label>
+            <label class="speed-option">
+              <span id="playback-speed-label">速度 100%</span>
+              <span class="speed-inputs">
+                <input id="playback-speed" class="graph-option-range" type="range" min="50" max="150" step="5" value="100" list="playback-speed-marks" />
+                <input id="playback-speed-number" class="graph-option-number" type="number" min="50" max="150" step="5" value="100" inputmode="numeric" aria-label="再生速度パーセント" />
+              </span>
+              <datalist id="playback-speed-marks">
+                <option value="50"></option>
+                <option value="75"></option>
+                <option value="100"></option>
+                <option value="125"></option>
+                <option value="150"></option>
+              </datalist>
             </label>
             <label>
               <span>歌声閾値</span>
@@ -128,36 +135,6 @@
                 <option value="0">そのまま</option>
                 <option value="12">1オクターブ上</option>
                 <option value="24">2オクターブ上</option>
-              </select>
-            </label>
-            <label>
-              <span>上下補正</span>
-              <select id="guide-transpose" class="graph-option-select">
-                <option value="-12">-12半音</option>
-                <option value="-11">-11半音</option>
-                <option value="-10">-10半音</option>
-                <option value="-9">-9半音</option>
-                <option value="-8">-8半音</option>
-                <option value="-7">-7半音</option>
-                <option value="-6">-6半音</option>
-                <option value="-5">-5半音</option>
-                <option value="-4">-4半音</option>
-                <option value="-3">-3半音</option>
-                <option value="-2">-2半音</option>
-                <option value="-1">-1半音</option>
-                <option value="0" selected>0半音</option>
-                <option value="1">+1半音</option>
-                <option value="2">+2半音</option>
-                <option value="3">+3半音</option>
-                <option value="4">+4半音</option>
-                <option value="5">+5半音</option>
-                <option value="6">+6半音</option>
-                <option value="7">+7半音</option>
-                <option value="8">+8半音</option>
-                <option value="9">+9半音</option>
-                <option value="10">+10半音</option>
-                <option value="11">+11半音</option>
-                <option value="12">+12半音</option>
               </select>
             </label>
             <label>
@@ -215,6 +192,6 @@
       <table><tbody id="note-table"></tbody></table>
     </div>
 
-    <script src="./app.js?v=2026.08.01.8"></script>
+    <script src="./app.js?v=2026.08.01.9"></script>
   </body>
 </html>

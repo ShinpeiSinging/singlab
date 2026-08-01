@@ -1063,7 +1063,7 @@ body {
 
 .graph-option-row {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: minmax(72px, 0.8fr) minmax(150px, 1.4fr) repeat(5, minmax(78px, 1fr));
   gap: 6px;
   margin-top: 0;
 }
@@ -1084,12 +1084,44 @@ body {
   white-space: nowrap;
 }
 
-.graph-option-row select {
+.graph-option-row select,
+.graph-option-row input[type="range"],
+.graph-option-row input[type="number"] {
   width: 100%;
   max-width: none;
   min-width: 0;
+}
+
+.graph-option-row select {
   min-height: 32px;
   padding: 5px 7px;
+  font-size: 0.76rem;
+}
+
+.graph-option-row input[type="range"] {
+  min-height: 32px;
+  padding: 3px 0;
+}
+
+.speed-option {
+  min-width: 170px;
+}
+
+.speed-inputs {
+  display: grid;
+  grid-template-columns: minmax(86px, 1fr) 52px;
+  gap: 6px;
+  align-items: center;
+}
+
+.graph-option-number {
+  min-height: 32px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(12, 23, 41, 0.84);
+  color: var(--text);
+  font: inherit;
   font-size: 0.76rem;
 }
 
@@ -1612,14 +1644,28 @@ body {
     min-width: 78px;
   }
 
+  .graph-option-row .speed-option {
+    min-width: 154px;
+  }
+
   .graph-option-row label span {
     font-size: 0.52rem;
   }
 
-  .graph-option-row select {
+  .graph-option-row select,
+  .graph-option-number {
     min-height: 24px;
     padding: 2px 4px;
     font-size: 0.58rem;
+  }
+
+  .graph-option-row input[type="range"] {
+    min-height: 24px;
+  }
+
+  .speed-inputs {
+    grid-template-columns: minmax(80px, 1fr) 42px;
+    gap: 4px;
   }
 
   .app-version {

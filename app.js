@@ -1,6 +1,5 @@
 ﻿const els = {
   appVersion: document.getElementById("app-version"),
-  voiceRange: document.getElementById("voice-range"),
   micStart: document.getElementById("mic-start"),
   micStop: document.getElementById("mic-stop"),
   saveTake: document.getElementById("save-take"),
@@ -13,10 +12,12 @@
   micChart: document.getElementById("mic-chart"),
   pitchModel: document.getElementById("pitch-model"),
   graphScale: document.getElementById("graph-scale"),
+  playbackSpeed: document.getElementById("playback-speed"),
+  playbackSpeedNumber: document.getElementById("playback-speed-number"),
+  playbackSpeedLabel: document.getElementById("playback-speed-label"),
   voiceThreshold: document.getElementById("voice-threshold"),
   guideOffset: document.getElementById("guide-offset"),
   guideOctave: document.getElementById("guide-octave"),
-  guideTranspose: document.getElementById("guide-transpose"),
   countIn: document.getElementById("count-in"),
   audioStatus: document.getElementById("audio-status"),
   audioProgress: document.getElementById("audio-progress"),
@@ -61,7 +62,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.01.8";
+const APP_VERSION = "2026.08.01.9";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -247,9 +248,7 @@ function midiToY(midi, minMidi, maxMidi, height) {
 }
 
 function getVoiceRangePreset() {
-  return els.voiceRange?.value === "female"
-    ? { label: "女性", minMidi: 60, maxMidi: 84, center: 72 }
-    : { label: "男性", minMidi: 48, maxMidi: 72, center: 60 };
+  return { label: "標準", minMidi: 48, maxMidi: 72, center: 60 };
 }
 
 function getDisplayVoiceRangePreset() {
@@ -1288,6 +1287,73 @@ function updateMidiVolumeUi(value = els.midiVolume?.value ?? 70) {
   return numeric / 100;
 }
 
+function getPlaybackSpeed() {
+  return clamp(Number(els.playbackSpeed?.value || 100) / 100, 0.5, 1.5);
+}
+
+function updatePlaybackSpeedUi(value = els.playbackSpeed?.value ?? 100) {
+  const percent = clamp(Number(value) || 100, 50, 150);
+  if (els.playbackSpeed) els.playbackSpeed.value = String(percent);
+  if (els.playbackSpeedNumber) els.playbackSpeedNumber.value = String(percent);
+  if (els.playbackSpeedLabel) els.playbackSpeedLabel.textContent = `速度 ${percent.toFixed(0)}%`;
+  return percent / 100;
+}
+
+function handlePlaybackSpeedChange(value) {
+  const playback = midiState.playback;
+  const currentPosition = getMidiPlaybackPositionSeconds();
+  updatePlaybackSpeedUi(value);
+  const speed = applyMidiPlaybackSpeed(playback);
+  if (playback.playing && playback.audioContext) {
+    playback.positionSeconds = currentPosition;
+    playback.seekStartSeconds = currentPosition;
+    playback.startTime = playback.audioContext.currentTime;
+    if (playback.sequencer) {
+      try {
+        playback.sequencer.currentTime = currentPosition;
+        playback.sequencer.play();
+      } catch {}
+    }
+  }
+  logMidi(`再生速度: ${Math.round(speed * 100)}%`);
+  updateMidiPlaybackUi(currentPosition);
+  refreshMidiCharts();
+}
+
+function applyMidiPlaybackSpeed(playback = midiState.playback) {
+  const speed = updatePlaybackSpeedUi();
+  playback.playbackSpeed = speed;
+  const sequencer = playback.sequencer;
+  if (!sequencer) return speed;
+
+  const candidates = ["playbackRate", "playbackSpeed", "speed", "tempoMultiplier"];
+  let applied = false;
+  candidates.forEach((property) => {
+    if (property in sequencer) {
+      try {
+        sequencer[property] = speed;
+        applied = true;
+      } catch {}
+    }
+  });
+  if (typeof sequencer.setPlaybackRate === "function") {
+    try {
+      sequencer.setPlaybackRate(speed);
+      applied = true;
+    } catch {}
+  }
+  if (typeof sequencer.setTempoMultiplier === "function") {
+    try {
+      sequencer.setTempoMultiplier(speed);
+      applied = true;
+    } catch {}
+  }
+  if (!applied && speed !== 1) {
+    logMidi("再生速度: シンセ側の速度変更APIが見つからないため、表示時計のみ速度反映");
+  }
+  return speed;
+}
+
 function refreshMidiCharts() {
   drawMicChart(micState.history, getSelectedMidiTrack());
   renderMidiComparison();
@@ -1309,7 +1375,7 @@ function getAudioClockSeconds(playback) {
   }
   const elapsed = contextTime - playback.startTime;
   if (!Number.isFinite(elapsed)) return null;
-  return (playback.seekStartSeconds || 0) + elapsed;
+  return (playback.seekStartSeconds || 0) + elapsed * (playback.playbackSpeed || 1);
 }
 
 function getMidiPlaybackPositionSeconds() {
@@ -1592,12 +1658,14 @@ async function playMidiTrack(startSeconds = 0) {
   playback.visualTailStartPosition = null;
   playback.visualTailSeconds = 0;
   playback.sequencer.currentTime = playback.positionSeconds;
+  applyMidiPlaybackSpeed(playback);
   await playCountIn(playback);
   if (playback.sessionId !== sessionId) return;
   playback.playing = true;
   playback.startTime = playback.audioContext.currentTime;
+  applyMidiPlaybackSpeed(playback);
   await Promise.resolve(playback.sequencer.play());
-  logMidi(`再生開始: tracks=${tracks.length}, notes=${midiSequence.tracks?.reduce((sum, track) => sum + (track.notes?.length || 0), 0) || 0}, seek=${playback.positionSeconds.toFixed(2)}s`);
+  logMidi(`再生開始: tracks=${tracks.length}, notes=${midiSequence.tracks?.reduce((sum, track) => sum + (track.notes?.length || 0), 0) || 0}, seek=${playback.positionSeconds.toFixed(2)}s, speed=${Math.round((playback.playbackSpeed || 1) * 100)}%`);
   if (els.midiPlay) els.midiPlay.textContent = "再生中";
   updateMidiPlaybackUi(playback.positionSeconds);
 
@@ -2115,6 +2183,7 @@ const midiState = {
     duration: 0,
     notes: [],
     playing: false,
+    playbackSpeed: 1,
     sessionId: 0,
     visualTailStartPerf: null,
     visualTailStartPosition: null,
@@ -2773,15 +2842,12 @@ els.defaultMidi?.addEventListener("change", () => {
 });
 els.metronomeToggle?.addEventListener("click", toggleMetronome);
 els.saveTake?.addEventListener("click", saveTake);
-els.voiceRange?.addEventListener("change", refreshMidiCharts);
 els.graphScale?.addEventListener("change", refreshMidiCharts);
+els.playbackSpeed?.addEventListener("input", () => handlePlaybackSpeedChange(els.playbackSpeed.value));
+els.playbackSpeedNumber?.addEventListener("change", () => handlePlaybackSpeedChange(els.playbackSpeedNumber.value));
 els.voiceThreshold?.addEventListener("change", refreshMidiCharts);
 els.guideOffset?.addEventListener("change", refreshMidiCharts);
 els.guideOctave?.addEventListener("change", () => {
-  renderMidiTrackList();
-  refreshMidiCharts();
-});
-els.guideTranspose?.addEventListener("change", () => {
   renderMidiTrackList();
   refreshMidiCharts();
 });
