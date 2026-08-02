@@ -1004,7 +1004,7 @@ body {
 
 .pitch-panel {
   display: grid;
-  grid-template-rows: auto minmax(320px, 1fr) auto auto;
+  grid-template-rows: minmax(320px, 1fr) auto auto;
   gap: 8px;
   margin-top: 0;
   padding: 10px;
@@ -1063,7 +1063,7 @@ body {
 
 .graph-option-row {
   display: grid;
-  grid-template-columns: minmax(72px, 0.8fr) minmax(150px, 1.4fr) repeat(6, minmax(78px, 1fr));
+  grid-template-columns: minmax(72px, 0.8fr) minmax(150px, 1.4fr) repeat(5, minmax(78px, 1fr));
   gap: 6px;
   margin-top: 0;
 }
@@ -1229,7 +1229,7 @@ body {
   .pitch-panel {
     padding: 7px;
     gap: 6px;
-    grid-template-rows: auto minmax(260px, 1fr) auto auto;
+    grid-template-rows: minmax(260px, 1fr) auto auto;
   }
 
   .pitch-panel canvas {
@@ -1337,7 +1337,7 @@ body {
 }
 
 .pitch-panel {
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   min-height: 0;
   overflow: hidden;
   gap: 6px;
@@ -1553,7 +1553,7 @@ body {
   }
 
   .pitch-panel {
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: 4px;
     padding: 5px;
     padding-bottom: calc(var(--mobile-dock-h) + 6px);

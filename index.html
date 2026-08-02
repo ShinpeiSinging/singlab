@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SingLab | Vocal Pitch Scoring</title>
-    <link rel="stylesheet" href="./styles.css?v=2026.08.02.1" />
+    <link rel="stylesheet" href="./styles.css?v=2026.08.02.2" />
   </head>
   <body>
     <div class="bg-orb orb-a"></div>
@@ -48,10 +48,6 @@
         </section>
 
         <section class="chart-card compact-card pitch-panel">
-          <div class="chart-head">
-            <h3 class="visually-hidden">ピッチグラフ</h3>
-            <span id="mic-status">停止中</span>
-          </div>
           <canvas id="mic-chart" width="1200" height="520"></canvas>
 
           <div class="transport-row" aria-label="再生と採点">
@@ -110,15 +106,6 @@
               </select>
             </label>
             <label>
-              <span>メトロノーム</span>
-              <select id="metronome-mode" class="graph-option-select">
-                <option value="auto" selected>拍子から自動</option>
-                <option value="off">なし</option>
-                <option value="four">4ビート</option>
-                <option value="eight">8ビート</option>
-              </select>
-            </label>
-            <label>
               <span>時刻補正</span>
               <select id="guide-offset" class="graph-option-select">
                 <option value="-1000">早める 1.0秒</option>
@@ -169,6 +156,13 @@
       <button id="midi-top-auto-exclude" type="button">自動選択</button>
       <button id="midi-top-use-score" type="button">差分を更新</button>
       <div id="midi-debug-log">MIDI の読み込み待ち</div>
+      <span id="mic-status">停止中</span>
+      <select id="metronome-mode">
+        <option value="auto" selected>拍子から自動</option>
+        <option value="off">なし</option>
+        <option value="four">4ビート</option>
+        <option value="eight">8ビート</option>
+      </select>
       <button id="metronome-toggle" type="button">メトロノーム</button>
       <button id="save-take" type="button">テイク保存</button>
       <button id="load-demo" type="button">デモ</button>
@@ -202,6 +196,6 @@
       <table><tbody id="note-table"></tbody></table>
     </div>
 
-    <script src="./app.js?v=2026.08.02.1"></script>
+    <script src="./app.js?v=2026.08.02.2"></script>
   </body>
 </html>
