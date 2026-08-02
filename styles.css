@@ -1063,7 +1063,7 @@ body {
 
 .graph-option-row {
   display: grid;
-  grid-template-columns: minmax(72px, 0.8fr) minmax(150px, 1.4fr) repeat(5, minmax(78px, 1fr));
+  grid-template-columns: minmax(72px, 0.8fr) minmax(150px, 1.4fr) repeat(6, minmax(78px, 1fr));
   gap: 6px;
   margin-top: 0;
 }

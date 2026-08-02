@@ -15,6 +15,7 @@
   playbackSpeed: document.getElementById("playback-speed"),
   playbackSpeedNumber: document.getElementById("playback-speed-number"),
   playbackSpeedLabel: document.getElementById("playback-speed-label"),
+  metronomeMode: document.getElementById("metronome-mode"),
   voiceThreshold: document.getElementById("voice-threshold"),
   guideOffset: document.getElementById("guide-offset"),
   guideOctave: document.getElementById("guide-octave"),
@@ -62,7 +63,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.01.10";
+const APP_VERSION = "2026.08.02.1";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -317,6 +318,38 @@ function getCountInMode() {
 function getCountInTempo() {
   const tempoEvent = midiState.parsed?.tempoEvents?.find((event) => Number.isFinite(event.tempo));
   return tempoEvent?.tempo ? clamp(60000000 / tempoEvent.tempo, 40, 240) : 120;
+}
+
+function getPrimaryTimeSignature() {
+  const event = midiState.parsed?.timeSignatureEvents?.find((item) => (
+    Number.isFinite(item.numerator) && Number.isFinite(item.denominator)
+  ));
+  return event || { numerator: 4, denominator: 4 };
+}
+
+function getMetronomeMode() {
+  return els.metronomeMode?.value || "off";
+}
+
+function getResolvedMetronomeMode() {
+  const mode = getMetronomeMode();
+  if (mode === "off") return "off";
+  if (mode === "four" || mode === "eight") return mode;
+  const signature = getPrimaryTimeSignature();
+  return signature.denominator === 8 ? "eight" : "four";
+}
+
+function getMetronomeGrid() {
+  const signature = getPrimaryTimeSignature();
+  const mode = getResolvedMetronomeMode();
+  const quarterSeconds = 60 / getCountInTempo();
+  if (mode === "off") {
+    return { mode, numerator: signature.numerator, denominator: signature.denominator, stepSeconds: 0, stepsPerMeasure: 0 };
+  }
+  const useEighth = mode === "eight";
+  const stepSeconds = useEighth ? quarterSeconds / 2 : quarterSeconds;
+  const stepsPerMeasure = Math.max(1, Math.round(signature.numerator * (useEighth ? 8 : 4) / signature.denominator));
+  return { mode, numerator: signature.numerator, denominator: signature.denominator, stepSeconds, stepsPerMeasure };
 }
 
 function getGuideOctaveShiftSemitones(track, minMidi, maxMidi) {
@@ -777,6 +810,7 @@ function parseMidiFile(arrayBuffer) {
   const divisionInfo = parseMidiDivision(divisionRaw);
   const division = divisionInfo.type === "ppq" ? divisionInfo.ticksPerQuarter : divisionInfo.ticksPerFrame;
   const tempoEvents = [];
+  const timeSignatureEvents = [];
   const tracks = [];
   const divisionLabel = divisionInfo.type === "smpte"
     ? `SMPTE ${divisionInfo.fps}fps/${divisionInfo.ticksPerFrame}tpf`
@@ -840,6 +874,12 @@ function parseMidiFile(arrayBuffer) {
         } else if (metaType === 0x51 && len === 3) {
           const tempo = (bytes[dataStart] << 16) | (bytes[dataStart + 1] << 8) | bytes[dataStart + 2];
           tempoEvents.push({ tick, tempo });
+        } else if (metaType === 0x58 && len >= 2) {
+          const numerator = bytes[dataStart] || 4;
+          const denominator = 2 ** (bytes[dataStart + 1] || 2);
+          if (Number.isFinite(numerator) && Number.isFinite(denominator) && numerator > 0 && denominator > 0) {
+            timeSignatureEvents.push({ tick, numerator, denominator });
+          }
         } else if (metaType === 0x54) {
           smpteOffsetSeconds = smpteOffsetToSeconds(bytes, dataStart, dataEnd, divisionInfo);
         } else if (metaType === 0x2f) {
@@ -909,7 +949,12 @@ function parseMidiFile(arrayBuffer) {
     })),
   })));
 
-  return { format, division, divisionRaw, divisionInfo, tempoEvents, tracks: normalizedTracks, tickToSeconds };
+  if (timeSignatureEvents.length) {
+    const first = timeSignatureEvents[0];
+    logMidi(`拍子検出: ${first.numerator}/${first.denominator}`);
+  }
+
+  return { format, division, divisionRaw, divisionInfo, tempoEvents, timeSignatureEvents, tracks: normalizedTracks, tickToSeconds };
 }
 
 function compressMicHistory(history, track = getSelectedMidiTrack()) {
@@ -1264,6 +1309,7 @@ function stopMidiPlayback({ resetPosition = false, resetDuration = false, keepVi
   playback.sessionId += 1;
   playback.startTime = 0;
   playback.seekStartSeconds = playback.positionSeconds || 0;
+  resetPlaybackMetronome(playback);
   if (!keepVisualTail) {
     playback.visualTailStartPerf = null;
     playback.visualTailStartPosition = null;
@@ -1313,6 +1359,7 @@ function handlePlaybackSpeedChange(value) {
     playback.positionSeconds = currentPosition;
     playback.seekStartSeconds = currentPosition;
     playback.startTime = playback.audioContext.currentTime;
+    resetPlaybackMetronome(playback);
     if (playback.sequencer) {
       try {
         playback.sequencer.currentTime = currentPosition;
@@ -1466,6 +1513,42 @@ function scheduleHiHat(audioContext, destination, when, accent = false) {
   gain.connect(destination);
   source.start(when);
   source.stop(when + duration + 0.02);
+}
+
+function resetPlaybackMetronome(playback = midiState.playback) {
+  playback.metronomeNextStep = null;
+  playback.metronomeLastMode = null;
+}
+
+function schedulePlaybackMetronome(playback = midiState.playback) {
+  const grid = getMetronomeGrid();
+  if (grid.mode === "off" || !grid.stepSeconds || !playback.playing || !playback.audioContext) {
+    resetPlaybackMetronome(playback);
+    return;
+  }
+  const audioContext = playback.audioContext;
+  const destination = playback.masterGain || audioContext.destination;
+  const currentSongTime = getMidiPlaybackPositionSeconds();
+  const speed = Math.max(0.1, playback.playbackSpeed || getPlaybackSpeed());
+  const lookAheadSongSeconds = 0.55 * speed;
+  if (playback.metronomeLastMode !== grid.mode) {
+    playback.metronomeNextStep = null;
+    playback.metronomeLastMode = grid.mode;
+  }
+  if (!Number.isFinite(playback.metronomeNextStep)) {
+    playback.metronomeNextStep = Math.max(0, Math.ceil((currentSongTime - 0.02) / grid.stepSeconds));
+  }
+  while ((playback.metronomeNextStep * grid.stepSeconds) <= currentSongTime + lookAheadSongSeconds) {
+    const step = playback.metronomeNextStep;
+    const songTime = step * grid.stepSeconds;
+    if (songTime >= currentSongTime - 0.025) {
+      const stepInMeasure = grid.stepsPerMeasure ? step % grid.stepsPerMeasure : 0;
+      const accent = stepInMeasure === 0;
+      const audioWhen = audioContext.currentTime + Math.max(0.01, (songTime - currentSongTime) / speed);
+      scheduleHiHat(audioContext, destination, audioWhen, accent);
+    }
+    playback.metronomeNextStep += 1;
+  }
 }
 
 function beginCountInCalibration(expectedTimes) {
@@ -1663,6 +1746,7 @@ async function playMidiTrack(startSeconds = 0) {
   playback.visualTailStartPosition = null;
   playback.visualTailSeconds = 0;
   playback.sequencer.currentTime = playback.positionSeconds;
+  resetPlaybackMetronome(playback);
   applyMidiPlaybackSpeed(playback);
   await playCountIn(playback);
   if (playback.sessionId !== sessionId) return;
@@ -1680,6 +1764,7 @@ async function playMidiTrack(startSeconds = 0) {
     if (!seq) return;
     if (midiState.playback.playing) {
       midiState.playback.positionSeconds = getMidiPlaybackPositionSeconds();
+      schedulePlaybackMetronome(midiState.playback);
       updateMidiPlaybackUi(midiState.playback.positionSeconds);
     } else if (Number.isFinite(midiState.playback.visualTailStartPerf)) {
       const elapsed = (performance.now() / 1000) - midiState.playback.visualTailStartPerf;
@@ -2189,6 +2274,8 @@ const midiState = {
     notes: [],
     playing: false,
     playbackSpeed: 1,
+    metronomeNextStep: null,
+    metronomeLastMode: null,
     sessionId: 0,
     visualTailStartPerf: null,
     visualTailStartPosition: null,
@@ -2850,6 +2937,12 @@ els.saveTake?.addEventListener("click", saveTake);
 els.graphScale?.addEventListener("change", refreshMidiCharts);
 els.playbackSpeed?.addEventListener("input", () => handlePlaybackSpeedChange(els.playbackSpeed.value));
 els.playbackSpeedNumber?.addEventListener("change", () => handlePlaybackSpeedChange(els.playbackSpeedNumber.value));
+els.metronomeMode?.addEventListener("change", () => {
+  resetPlaybackMetronome();
+  const grid = getMetronomeGrid();
+  const label = grid.mode === "off" ? "なし" : `${grid.mode === "eight" ? "8ビート" : "4ビート"} / ${grid.numerator}/${grid.denominator}`;
+  logMidi(`メトロノーム: ${label}`);
+});
 els.voiceThreshold?.addEventListener("change", refreshMidiCharts);
 els.guideOffset?.addEventListener("change", refreshMidiCharts);
 els.guideOctave?.addEventListener("change", () => {
@@ -2894,6 +2987,7 @@ els.midiSeek?.addEventListener("input", () => {
   if (midiState.playback.playing && midiState.playback.sequencer) {
     midiState.playback.positionSeconds = seekSeconds;
     midiState.playback.seekStartSeconds = seekSeconds;
+    resetPlaybackMetronome();
     if (midiState.playback.audioContext) {
       midiState.playback.startTime = midiState.playback.audioContext.currentTime;
     }
@@ -2902,6 +2996,7 @@ els.midiSeek?.addEventListener("input", () => {
     updateMidiPlaybackUi(seekSeconds);
   } else {
     midiState.playback.positionSeconds = seekSeconds;
+    resetPlaybackMetronome();
     updateMidiPlaybackUi(seekSeconds);
   }
 });
