@@ -64,7 +64,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.05.1";
+const APP_VERSION = "2026.08.05.2";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -3017,6 +3017,12 @@ function toggleMetronome() {
 function init() {
   updateAppVersionInfo();
   resetMidiDebugLog();
+  if (els.countIn) {
+    els.countIn.value = "off";
+    const countInLabel = els.countIn.closest("label");
+    if (countInLabel) countInLabel.hidden = true;
+  }
+  if (els.metronomeMode) els.metronomeMode.value = "off";
   setText(els.micStatus, "停止中");
   setText(els.micNote, "--");
   setText(els.micFrequency, "--");
