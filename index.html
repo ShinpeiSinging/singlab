@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SingLab | Vocal Pitch Scoring</title>
-    <link rel="stylesheet" href="./styles.css?v=2026.08.02.2" />
+    <link rel="stylesheet" href="./styles.css?v=2026.08.05.1" />
   </head>
   <body>
     <div class="bg-orb orb-a"></div>
@@ -53,6 +53,7 @@
           <div class="transport-row" aria-label="再生と採点">
             <button class="button primary" id="mic-start" type="button">再生・採点開始</button>
             <button class="button secondary" id="mic-stop" type="button">停止</button>
+            <button class="button secondary review-button" id="review-take" type="button" disabled>直前テイクなし</button>
             <div class="seek-inline">
               <span id="midi-time-label">00:00 / 00:00</span>
               <input id="midi-seek" type="range" min="0" max="100" value="0" />
@@ -196,6 +197,6 @@
       <table><tbody id="note-table"></tbody></table>
     </div>
 
-    <script src="./app.js?v=2026.08.02.2"></script>
+    <script src="./app.js?v=2026.08.05.1"></script>
   </body>
 </html>
