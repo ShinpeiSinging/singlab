@@ -64,7 +64,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.05.3";
+const APP_VERSION = "2026.08.05.4";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -1430,7 +1430,8 @@ function applyMidiPlaybackSpeed(playback = midiState.playback) {
 }
 
 function refreshMidiCharts() {
-  drawMicChart(micState.history, getSelectedMidiTrack());
+  const history = reviewState.active && latestTake?.history ? latestTake.history : micState.history;
+  drawMicChart(history, getSelectedMidiTrack());
   renderMidiComparison();
 }
 
@@ -1659,8 +1660,9 @@ async function startPracticeSession() {
   if (!hasPlayableMidi) return;
   try {
     resetMicTrackingState({ clearHistory: true });
-    await playMidiTrack(midiState.playback.positionSeconds || 0);
     startTakeRecording(midiState.playback.positionSeconds || 0);
+    await playMidiTrack(midiState.playback.positionSeconds || 0);
+    takeRecorderState.startedSongSeconds = midiState.playback.positionSeconds || takeRecorderState.startedSongSeconds;
     refreshMidiCharts();
   } catch (error) {
     await stopTakeRecording([]);
@@ -2549,6 +2551,7 @@ const reviewState = {
   audio: null,
   raf: null,
   active: false,
+  restoreVolume: null,
 };
 
 function updateMicUi({ frequency, confidence }) {
@@ -2599,7 +2602,13 @@ async function startSyncedPractice() {
 
 async function startMic() {
   if (micState.audioContext) return;
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
+  });
   const audioContext = new AudioContext();
   const analyser = audioContext.createAnalyser();
   analyser.fftSize = MIC_ANALYSIS_FFT_SIZE;
@@ -2865,6 +2874,20 @@ function revokeLatestTakeAudioUrl() {
   }
 }
 
+function restoreReviewMidiVolume() {
+  if (reviewState.restoreVolume == null || !els.midiVolume) return;
+  els.midiVolume.value = String(reviewState.restoreVolume);
+  updateMidiVolumeUi(reviewState.restoreVolume);
+  if (midiState.playback.audioContext && midiState.playback.masterGain) {
+    midiState.playback.masterGain.gain.setTargetAtTime(
+      Math.max(0.001, Number(reviewState.restoreVolume) / 100),
+      midiState.playback.audioContext.currentTime,
+      0.02,
+    );
+  }
+  reviewState.restoreVolume = null;
+}
+
 function stopReviewTake({ redrawLive = true } = {}) {
   if (reviewState.raf) cancelAnimationFrame(reviewState.raf);
   reviewState.raf = null;
@@ -2872,6 +2895,8 @@ function stopReviewTake({ redrawLive = true } = {}) {
     reviewState.audio.pause();
     reviewState.audio.currentTime = 0;
   }
+  stopMidiPlayback();
+  restoreReviewMidiVolume();
   reviewState.audio = null;
   reviewState.active = false;
   updateReviewTakeUi();
@@ -2896,7 +2921,7 @@ function startTakeRecording(startedSongSeconds = getMidiPlaybackPositionSeconds(
     recorder.addEventListener("dataavailable", (event) => {
       if (event.data?.size) takeRecorderState.chunks.push(event.data);
     });
-    recorder.start(250);
+    recorder.start();
     takeRecorderState.recorder = recorder;
     takeRecorderState.recording = true;
     updateReviewTakeUi();
@@ -2965,7 +2990,7 @@ function drawReviewTakeFrame() {
   }
 }
 
-function playLatestTakeReview() {
+async function playLatestTakeReview() {
   if (reviewState.active) {
     stopReviewTake();
     return;
@@ -2975,20 +3000,36 @@ function playLatestTakeReview() {
     return;
   }
   stopMidiPlayback();
-  stopMic().catch(() => {});
+  await stopMic().catch(() => {});
   const audio = new Audio(latestTake.audioUrl);
   audio.addEventListener("ended", () => {
     updateReviewPlaybackUi();
     drawMicChart(latestTake.history || [], getSelectedMidiTrack());
+    stopMidiPlayback();
+    restoreReviewMidiVolume();
     reviewState.active = false;
+    reviewState.audio = null;
     updateReviewTakeUi();
   }, { once: true });
   reviewState.audio = audio;
   reviewState.active = true;
+  reviewState.restoreVolume = els.midiVolume ? Number(els.midiVolume.value || 70) : null;
   updateReviewTakeUi();
   updateReviewPlaybackUi();
   audio.play()
-    .then(() => {
+    .then(async () => {
+      if (els.midiVolume) {
+        els.midiVolume.value = "25";
+        updateMidiVolumeUi(25);
+      }
+      try {
+        await playMidiTrack(getLatestTakeClockSeconds());
+        if (midiState.playback.audioContext && midiState.playback.masterGain) {
+          midiState.playback.masterGain.gain.setTargetAtTime(0.25, midiState.playback.audioContext.currentTime, 0.02);
+        }
+      } catch (error) {
+        logMidi(`振り返りMIDI再生なし: ${error.message}`);
+      }
       drawReviewTakeFrame();
     })
     .catch((error) => {
