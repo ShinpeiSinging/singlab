@@ -64,7 +64,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.05.2";
+const APP_VERSION = "2026.08.05.3";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -1349,6 +1349,28 @@ function updatePlaybackSpeedUi(value = els.playbackSpeed?.value ?? 100) {
   if (els.playbackSpeedNumber) els.playbackSpeedNumber.value = String(percent);
   if (els.playbackSpeedLabel) els.playbackSpeedLabel.textContent = `速度 ${percent.toFixed(0)}%`;
   return percent / 100;
+}
+
+function setupGuideOffsetOptions() {
+  if (!els.guideOffset) return;
+  const current = Number(els.guideOffset.value || 0);
+  els.guideOffset.innerHTML = "";
+  for (let ms = -1000; ms <= 1000; ms += 50) {
+    const option = document.createElement("option");
+    option.value = String(ms);
+    if (ms < 0) {
+      option.textContent = `早める ${Math.abs(ms)}ms`;
+    } else if (ms > 0) {
+      option.textContent = `遅らせる ${ms}ms`;
+    } else {
+      option.textContent = "0ms";
+    }
+    if (ms === current || (!Number.isFinite(current) && ms === 0)) option.selected = true;
+    els.guideOffset.appendChild(option);
+  }
+  if (![...els.guideOffset.options].some((option) => option.selected)) {
+    els.guideOffset.value = "0";
+  }
 }
 
 function handlePlaybackSpeedChange(value) {
@@ -3022,7 +3044,13 @@ function init() {
     const countInLabel = els.countIn.closest("label");
     if (countInLabel) countInLabel.hidden = true;
   }
+  if (els.guideOctave) {
+    els.guideOctave.value = "auto";
+    const guideOctaveLabel = els.guideOctave.closest("label");
+    if (guideOctaveLabel) guideOctaveLabel.hidden = true;
+  }
   if (els.metronomeMode) els.metronomeMode.value = "off";
+  setupGuideOffsetOptions();
   setText(els.micStatus, "停止中");
   setText(els.micNote, "--");
   setText(els.micFrequency, "--");
