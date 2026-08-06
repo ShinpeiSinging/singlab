@@ -64,7 +64,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.05.4";
+const APP_VERSION = "2026.08.07.1";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -74,6 +74,11 @@ const defaultMidiSongs = {
     title: "M2 自由になりたい（別紙コーラス）",
     fileName: "M2自由になりたい-別紙コーラス.mid",
     url: "./assets/midi/jiyu-ni-naritai-chorus.mid",
+  },
+  yarukoto_takusan: {
+    title: "M3 やることたくさん",
+    fileName: "M3やることたくさん.mid",
+    url: "./assets/midi/yarukoto-takusan.mid",
   },
   shiawase_wo_tsukamu_tame: {
     title: "M4 幸せをつかむため",
