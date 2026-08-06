@@ -64,7 +64,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.07.1";
+const APP_VERSION = "2026.08.07.2";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -1658,6 +1658,50 @@ async function playCountIn(playback) {
   return totalSeconds;
 }
 
+function startMidiPlaybackTimer() {
+  clearMidiPlaybackTimer();
+  midiState.playback.timer = window.setInterval(() => {
+    const seq = midiState.playback.sequencer;
+    if (!seq) return;
+    if (midiState.playback.playing) {
+      midiState.playback.positionSeconds = getMidiPlaybackPositionSeconds();
+      schedulePlaybackMetronome(midiState.playback);
+      updateMidiPlaybackUi(midiState.playback.positionSeconds);
+    } else if (Number.isFinite(midiState.playback.visualTailStartPerf)) {
+      const elapsed = (performance.now() / 1000) - midiState.playback.visualTailStartPerf;
+      if (elapsed > (midiState.playback.visualTailSeconds || 0)) {
+        midiState.playback.visualTailStartPerf = null;
+        midiState.playback.visualTailStartPosition = null;
+        midiState.playback.visualTailSeconds = 0;
+        clearMidiPlaybackTimer();
+        refreshMidiCharts();
+        return;
+      }
+    } else {
+      return;
+    }
+    refreshMidiCharts();
+    if (!seq.paused && midiState.playback.positionSeconds >= midiState.playback.duration - 0.03) {
+      midiState.playback.positionSeconds = midiState.playback.duration;
+      midiState.playback.visualTailStartPerf = performance.now() / 1000;
+      midiState.playback.visualTailStartPosition = midiState.playback.duration;
+      midiState.playback.visualTailSeconds = (20 / getGraphScale()) / 2 + 0.8;
+      stopMidiPlayback({ keepVisualTail: true });
+    }
+  }, 50);
+}
+
+async function startPreparedMidiPlayback(playback, sessionId) {
+  if (playback.sessionId !== sessionId) return;
+  playback.playing = true;
+  playback.startTime = playback.audioContext.currentTime;
+  applyMidiPlaybackSpeed(playback);
+  await Promise.resolve(playback.sequencer.play());
+  if (els.midiPlay) els.midiPlay.textContent = "再生中";
+  updateMidiPlaybackUi(playback.positionSeconds);
+  startMidiPlaybackTimer();
+}
+
 async function startPracticeSession() {
   stopReviewTake({ redrawLive: false });
   await startMic();
@@ -1766,7 +1810,8 @@ function playMidiVoice(audioContext, destination, note, startTime, endTime, trac
   });
 }
 
-async function playMidiTrack(startSeconds = 0) {
+async function playMidiTrack(startSeconds = 0, options = {}) {
+  const { skipCountIn = false, deferStart = false } = options;
   const tracks = (midiState.tracks || []).filter((track) => track.notes?.length);
   if (!tracks.length) {
     alert("MIDIトラックを選んでください。");
@@ -1788,46 +1833,14 @@ async function playMidiTrack(startSeconds = 0) {
   playback.sequencer.currentTime = playback.positionSeconds;
   resetPlaybackMetronome(playback);
   applyMidiPlaybackSpeed(playback);
-  await playCountIn(playback);
+  if (!skipCountIn) await playCountIn(playback);
   if (playback.sessionId !== sessionId) return;
-  playback.playing = true;
-  playback.startTime = playback.audioContext.currentTime;
-  applyMidiPlaybackSpeed(playback);
-  await Promise.resolve(playback.sequencer.play());
+  if (deferStart) {
+    logMidi(`再生準備: tracks=${tracks.length}, seek=${playback.positionSeconds.toFixed(2)}s, speed=${Math.round((playback.playbackSpeed || 1) * 100)}%`);
+    return () => startPreparedMidiPlayback(playback, sessionId);
+  }
+  await startPreparedMidiPlayback(playback, sessionId);
   logMidi(`再生開始: tracks=${tracks.length}, notes=${midiSequence.tracks?.reduce((sum, track) => sum + (track.notes?.length || 0), 0) || 0}, seek=${playback.positionSeconds.toFixed(2)}s, speed=${Math.round((playback.playbackSpeed || 1) * 100)}%`);
-  if (els.midiPlay) els.midiPlay.textContent = "再生中";
-  updateMidiPlaybackUi(playback.positionSeconds);
-
-  clearMidiPlaybackTimer();
-  playback.timer = window.setInterval(() => {
-    const seq = midiState.playback.sequencer;
-    if (!seq) return;
-    if (midiState.playback.playing) {
-      midiState.playback.positionSeconds = getMidiPlaybackPositionSeconds();
-      schedulePlaybackMetronome(midiState.playback);
-      updateMidiPlaybackUi(midiState.playback.positionSeconds);
-    } else if (Number.isFinite(midiState.playback.visualTailStartPerf)) {
-      const elapsed = (performance.now() / 1000) - midiState.playback.visualTailStartPerf;
-      if (elapsed > (midiState.playback.visualTailSeconds || 0)) {
-        midiState.playback.visualTailStartPerf = null;
-        midiState.playback.visualTailStartPosition = null;
-        midiState.playback.visualTailSeconds = 0;
-        clearMidiPlaybackTimer();
-        refreshMidiCharts();
-        return;
-      }
-    } else {
-      return;
-    }
-    refreshMidiCharts();
-    if (!seq.paused && midiState.playback.positionSeconds >= midiState.playback.duration - 0.03) {
-      midiState.playback.positionSeconds = midiState.playback.duration;
-      midiState.playback.visualTailStartPerf = performance.now() / 1000;
-      midiState.playback.visualTailStartPosition = midiState.playback.duration;
-      midiState.playback.visualTailSeconds = (20 / getGraphScale()) / 2 + 0.8;
-      stopMidiPlayback({ keepVisualTail: true });
-    }
-  }, 50);
 }
 
 function getPitchModel() {
@@ -3021,28 +3034,37 @@ async function playLatestTakeReview() {
   reviewState.restoreVolume = els.midiVolume ? Number(els.midiVolume.value || 70) : null;
   updateReviewTakeUi();
   updateReviewPlaybackUi();
-  audio.play()
-    .then(async () => {
-      if (els.midiVolume) {
-        els.midiVolume.value = "25";
-        updateMidiVolumeUi(25);
+  try {
+    let startMidi = null;
+    if (els.midiVolume) {
+      els.midiVolume.value = "25";
+      updateMidiVolumeUi(25);
+    }
+    try {
+      startMidi = await playMidiTrack(getLatestTakeClockSeconds(), {
+        skipCountIn: true,
+        deferStart: true,
+      });
+      if (midiState.playback.audioContext && midiState.playback.masterGain) {
+        midiState.playback.masterGain.gain.setTargetAtTime(0.25, midiState.playback.audioContext.currentTime, 0.02);
       }
-      try {
-        await playMidiTrack(getLatestTakeClockSeconds());
-        if (midiState.playback.audioContext && midiState.playback.masterGain) {
-          midiState.playback.masterGain.gain.setTargetAtTime(0.25, midiState.playback.audioContext.currentTime, 0.02);
-        }
-      } catch (error) {
-        logMidi(`振り返りMIDI再生なし: ${error.message}`);
-      }
-      drawReviewTakeFrame();
-    })
-    .catch((error) => {
-      reviewState.active = false;
-      reviewState.audio = null;
-      updateReviewTakeUi();
-      alert(`直前テイクを再生できません: ${error.message}`);
-    });
+    } catch (error) {
+      logMidi(`振り返りMIDI再生なし: ${error.message}`);
+    }
+    await audio.play();
+    if (typeof startMidi === "function") {
+      await startMidi();
+      logMidi(`振り返りMIDI同期再生: start=${getLatestTakeClockSeconds().toFixed(2)}s`);
+    }
+    drawReviewTakeFrame();
+  } catch (error) {
+    stopMidiPlayback();
+    restoreReviewMidiVolume();
+    reviewState.active = false;
+    reviewState.audio = null;
+    updateReviewTakeUi();
+    alert(`直前テイクを再生できません: ${error.message}`);
+  }
 }
 
 function saveTake() {
