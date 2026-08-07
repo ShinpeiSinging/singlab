@@ -66,7 +66,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.07.4";
+const APP_VERSION = "2026.08.07.5";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -262,7 +262,7 @@ function midiToY(midi, minMidi, maxMidi, height) {
 }
 
 function getVoiceRangePreset() {
-  return { label: "標準", minMidi: 48, maxMidi: 72, center: 60 };
+  return { label: "標準", minMidi: 48, maxMidi: 84, center: 66 };
 }
 
 function getDisplayVoiceRangePreset() {
@@ -1874,7 +1874,7 @@ function preparePitchSignal(buffer, sampleRate) {
   }
 
   const minFrequency = 70;
-  const maxFrequency = 1200;
+  const maxFrequency = 1800;
   const minTau = Math.max(2, Math.floor(sampleRate / maxFrequency));
   const maxTau = Math.min(SIZE - 2, Math.ceil(sampleRate / minFrequency));
   return { signal, size: SIZE, rms, minTau, maxTau, sampleRate };
