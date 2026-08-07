@@ -64,7 +64,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.07.2";
+const APP_VERSION = "2026.08.07.3";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -2865,7 +2865,13 @@ function getLatestTakeClockSeconds() {
   if (!latestTake || !reviewState.audio) return 0;
   const started = Number(latestTake.startedSongSeconds) || 0;
   const speed = Number(latestTake.playbackSpeed) || 1;
-  return started + (reviewState.audio.currentTime || 0) * speed;
+  const audioSkip = getLatestTakeAudioSkipSeconds();
+  return started + Math.max(0, (reviewState.audio.currentTime || 0) - audioSkip) * speed;
+}
+
+function getLatestTakeAudioSkipSeconds() {
+  if (!latestTake) return 0;
+  return clamp(Number(latestTake.reviewAudioSkipSeconds) || 0, 0, 1.2);
 }
 
 function updateReviewPlaybackUi() {
@@ -2889,6 +2895,77 @@ function getRecordingMimeType() {
 function revokeLatestTakeAudioUrl() {
   if (latestTake?.audioUrl) {
     URL.revokeObjectURL(latestTake.audioUrl);
+  }
+}
+
+function getFirstTakeHistoryVoiceTime(take) {
+  const started = Number(take?.startedSongSeconds) || 0;
+  const first = (take?.history || [])
+    .filter((item) => Number.isFinite(item?.time))
+    .sort((a, b) => a.time - b.time)[0];
+  return first ? Math.max(0, first.time - started) : 0;
+}
+
+function estimateDecodedAudioFirstSoundSeconds(audioBuffer) {
+  if (!audioBuffer || !audioBuffer.length || !audioBuffer.sampleRate) return null;
+  const sampleRate = audioBuffer.sampleRate;
+  const channelCount = Math.max(1, audioBuffer.numberOfChannels || 1);
+  const length = audioBuffer.length;
+  const windowSize = Math.max(128, Math.floor(sampleRate * 0.02));
+  const hopSize = Math.max(64, Math.floor(sampleRate * 0.01));
+  const rmsValues = [];
+  for (let start = 0; start + windowSize <= length; start += hopSize) {
+    let sum = 0;
+    for (let i = 0; i < windowSize; i += 1) {
+      let sample = 0;
+      for (let channel = 0; channel < channelCount; channel += 1) {
+        sample += audioBuffer.getChannelData(channel)[start + i] || 0;
+      }
+      sample /= channelCount;
+      sum += sample * sample;
+    }
+    rmsValues.push({ time: start / sampleRate, rms: Math.sqrt(sum / windowSize) });
+  }
+  if (!rmsValues.length) return null;
+  const baselineSamples = rmsValues.slice(0, Math.max(8, Math.min(30, Math.floor(rmsValues.length * 0.08))));
+  const baseline = median(baselineSamples.map((item) => item.rms).filter(Number.isFinite)) || 0;
+  const threshold = Math.max(0.006, baseline * 4.5);
+  let consecutive = 0;
+  for (const item of rmsValues) {
+    if (item.rms >= threshold) {
+      consecutive += 1;
+      if (consecutive >= 3) return Math.max(0, item.time - hopSize * 2 / sampleRate);
+    } else {
+      consecutive = 0;
+    }
+  }
+  return null;
+}
+
+async function estimateTakeReviewAudioSkipSeconds(take) {
+  if (!take?.audioBlob) return 0;
+  if (Number.isFinite(take.reviewAudioSkipSeconds)) return getLatestTakeAudioSkipSeconds();
+  try {
+    const arrayBuffer = await take.audioBlob.arrayBuffer();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return 0;
+    const audioContext = new AudioContextClass();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    const audioFirstSound = estimateDecodedAudioFirstSoundSeconds(audioBuffer);
+    await audioContext.close?.();
+    const historyFirstVoice = getFirstTakeHistoryVoiceTime(take);
+    const skipSeconds = Number.isFinite(audioFirstSound)
+      ? clamp(audioFirstSound - historyFirstVoice, 0, 0.8)
+      : 0;
+    take.reviewAudioSkipSeconds = skipSeconds;
+    if (skipSeconds > 0.025) {
+      logMidi(`振り返り録音補正: 先頭 ${Math.round(skipSeconds * 1000)}ms をスキップ`);
+    }
+    return skipSeconds;
+  } catch (error) {
+    take.reviewAudioSkipSeconds = 0;
+    logMidi(`振り返り録音補正なし: ${error.message}`);
+    return 0;
   }
 }
 
@@ -2981,6 +3058,7 @@ function stopTakeRecording(historySnapshot = []) {
         startedSongSeconds: takeRecorderState.startedSongSeconds,
         durationSongSeconds: midiState.playback.duration || Math.max(0.1, ...(midiState.tracks || []).map((track) => track.duration || 0)),
         playbackSpeed: takeRecorderState.playbackSpeed,
+        reviewAudioSkipSeconds: null,
       };
       takeRecorderState.chunks = [];
       updateReviewTakeUi();
@@ -3020,6 +3098,10 @@ async function playLatestTakeReview() {
   stopMidiPlayback();
   await stopMic().catch(() => {});
   const audio = new Audio(latestTake.audioUrl);
+  const reviewAudioSkipSeconds = await estimateTakeReviewAudioSkipSeconds(latestTake);
+  if (reviewAudioSkipSeconds > 0) {
+    audio.currentTime = reviewAudioSkipSeconds;
+  }
   audio.addEventListener("ended", () => {
     updateReviewPlaybackUi();
     drawMicChart(latestTake.history || [], getSelectedMidiTrack());
@@ -3290,8 +3372,9 @@ els.midiSeek?.addEventListener("input", () => {
   if (reviewState.active && reviewState.audio && latestTake) {
     const started = Number(latestTake.startedSongSeconds) || 0;
     const speed = Number(latestTake.playbackSpeed) || 1;
+    const audioSkip = getLatestTakeAudioSkipSeconds();
     const audioDuration = Number.isFinite(reviewState.audio.duration) ? reviewState.audio.duration : Number.MAX_SAFE_INTEGER;
-    reviewState.audio.currentTime = clamp((seekSeconds - started) / speed, 0, audioDuration);
+    reviewState.audio.currentTime = clamp(audioSkip + (seekSeconds - started) / speed, audioSkip, audioDuration);
     updateReviewPlaybackUi();
     drawMicChart(latestTake.history || [], getSelectedMidiTrack());
     return;
