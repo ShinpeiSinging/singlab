@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SingLab | Vocal Pitch Scoring</title>
-    <link rel="stylesheet" href="./styles.css?v=2026.08.07.3" />
+    <link rel="stylesheet" href="./styles.css?v=2026.08.07.4" />
   </head>
   <body>
     <div class="bg-orb orb-a"></div>
@@ -97,6 +97,31 @@
                 <option value="normal" selected>標準</option>
                 <option value="high">高め</option>
                 <option value="strict">かなり高め</option>
+              </select>
+            </label>
+            <label>
+              <span>振り返りMIDI</span>
+              <select id="review-midi-mode" class="graph-option-select">
+                <option value="soft" selected>薄く鳴らす</option>
+                <option value="off">鳴らさない</option>
+              </select>
+            </label>
+            <label>
+              <span>録音補正</span>
+              <select id="review-audio-offset" class="graph-option-select">
+                <option value="500">音声を早める 500ms</option>
+                <option value="300">音声を早める 300ms</option>
+                <option value="200">音声を早める 200ms</option>
+                <option value="150">音声を早める 150ms</option>
+                <option value="100">音声を早める 100ms</option>
+                <option value="50">音声を早める 50ms</option>
+                <option value="0" selected>0ms</option>
+                <option value="-50">音声を遅らせる 50ms</option>
+                <option value="-100">音声を遅らせる 100ms</option>
+                <option value="-150">音声を遅らせる 150ms</option>
+                <option value="-200">音声を遅らせる 200ms</option>
+                <option value="-300">音声を遅らせる 300ms</option>
+                <option value="-500">音声を遅らせる 500ms</option>
               </select>
             </label>
             <label>
@@ -198,6 +223,6 @@
       <table><tbody id="note-table"></tbody></table>
     </div>
 
-    <script src="./app.js?v=2026.08.07.3"></script>
+    <script src="./app.js?v=2026.08.07.4"></script>
   </body>
 </html>

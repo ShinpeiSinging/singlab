@@ -20,6 +20,8 @@
   voiceThreshold: document.getElementById("voice-threshold"),
   guideOffset: document.getElementById("guide-offset"),
   guideOctave: document.getElementById("guide-octave"),
+  reviewMidiMode: document.getElementById("review-midi-mode"),
+  reviewAudioOffset: document.getElementById("review-audio-offset"),
   countIn: document.getElementById("count-in"),
   audioStatus: document.getElementById("audio-status"),
   audioProgress: document.getElementById("audio-progress"),
@@ -64,7 +66,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.07.3";
+const APP_VERSION = "2026.08.07.4";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -314,6 +316,15 @@ function getGraphScale() {
 
 function getGuideDisplayOffsetSeconds() {
   const value = Number(els.guideOffset?.value || 0);
+  return Number.isFinite(value) ? value / 1000 : 0;
+}
+
+function getReviewMidiMode() {
+  return els.reviewMidiMode?.value || "soft";
+}
+
+function getReviewManualAudioOffsetSeconds() {
+  const value = Number(els.reviewAudioOffset?.value || 0);
   return Number.isFinite(value) ? value / 1000 : 0;
 }
 
@@ -2865,13 +2876,24 @@ function getLatestTakeClockSeconds() {
   if (!latestTake || !reviewState.audio) return 0;
   const started = Number(latestTake.startedSongSeconds) || 0;
   const speed = Number(latestTake.playbackSpeed) || 1;
-  const audioSkip = getLatestTakeAudioSkipSeconds();
-  return started + Math.max(0, (reviewState.audio.currentTime || 0) - audioSkip) * speed;
+  const audioOffset = getLatestTakeReviewAudioOffsetSeconds();
+  return started + Math.max(0, (reviewState.audio.currentTime || 0) - audioOffset) * speed;
 }
 
 function getLatestTakeAudioSkipSeconds() {
   if (!latestTake) return 0;
   return clamp(Number(latestTake.reviewAudioSkipSeconds) || 0, 0, 1.2);
+}
+
+function getLatestTakeReviewAudioOffsetSeconds() {
+  return clamp(getLatestTakeAudioSkipSeconds() + getReviewManualAudioOffsetSeconds(), -0.5, 1.7);
+}
+
+function getAudioCurrentTimeForSongTime(songTime) {
+  if (!latestTake) return 0;
+  const started = Number(latestTake.startedSongSeconds) || 0;
+  const speed = Number(latestTake.playbackSpeed) || 1;
+  return getLatestTakeReviewAudioOffsetSeconds() + ((songTime - started) / speed);
 }
 
 function updateReviewPlaybackUi() {
@@ -3099,8 +3121,9 @@ async function playLatestTakeReview() {
   await stopMic().catch(() => {});
   const audio = new Audio(latestTake.audioUrl);
   const reviewAudioSkipSeconds = await estimateTakeReviewAudioSkipSeconds(latestTake);
-  if (reviewAudioSkipSeconds > 0) {
-    audio.currentTime = reviewAudioSkipSeconds;
+  const reviewAudioOffsetSeconds = getLatestTakeReviewAudioOffsetSeconds();
+  if (reviewAudioOffsetSeconds > 0) {
+    audio.currentTime = reviewAudioOffsetSeconds;
   }
   audio.addEventListener("ended", () => {
     updateReviewPlaybackUi();
@@ -3122,16 +3145,20 @@ async function playLatestTakeReview() {
       els.midiVolume.value = "25";
       updateMidiVolumeUi(25);
     }
-    try {
-      startMidi = await playMidiTrack(getLatestTakeClockSeconds(), {
-        skipCountIn: true,
-        deferStart: true,
-      });
-      if (midiState.playback.audioContext && midiState.playback.masterGain) {
-        midiState.playback.masterGain.gain.setTargetAtTime(0.25, midiState.playback.audioContext.currentTime, 0.02);
+    if (getReviewMidiMode() !== "off") {
+      try {
+        startMidi = await playMidiTrack(getLatestTakeClockSeconds(), {
+          skipCountIn: true,
+          deferStart: true,
+        });
+        if (midiState.playback.audioContext && midiState.playback.masterGain) {
+          midiState.playback.masterGain.gain.setTargetAtTime(0.25, midiState.playback.audioContext.currentTime, 0.02);
+        }
+      } catch (error) {
+        logMidi(`振り返りMIDI再生なし: ${error.message}`);
       }
-    } catch (error) {
-      logMidi(`振り返りMIDI再生なし: ${error.message}`);
+    } else {
+      logMidi("振り返りMIDI再生なし: 設定でOFF");
     }
     await audio.play();
     if (typeof startMidi === "function") {
@@ -3329,6 +3356,15 @@ els.metronomeMode?.addEventListener("change", () => {
   logMidi(`メトロノーム: ${label}`);
 });
 els.voiceThreshold?.addEventListener("change", refreshMidiCharts);
+els.reviewMidiMode?.addEventListener("change", () => {
+  if (reviewState.active && getReviewMidiMode() === "off") stopMidiPlayback();
+});
+els.reviewAudioOffset?.addEventListener("change", () => {
+  if (reviewState.active && reviewState.audio && latestTake) {
+    updateReviewPlaybackUi();
+    drawMicChart(latestTake.history || [], getSelectedMidiTrack());
+  }
+});
 els.guideOffset?.addEventListener("change", refreshMidiCharts);
 els.guideOctave?.addEventListener("change", () => {
   renderMidiTrackList();
@@ -3370,11 +3406,8 @@ els.midiSeek?.addEventListener("input", () => {
   const ratio = Number(els.midiSeek.value) / 100;
   const seekSeconds = duration * ratio;
   if (reviewState.active && reviewState.audio && latestTake) {
-    const started = Number(latestTake.startedSongSeconds) || 0;
-    const speed = Number(latestTake.playbackSpeed) || 1;
-    const audioSkip = getLatestTakeAudioSkipSeconds();
     const audioDuration = Number.isFinite(reviewState.audio.duration) ? reviewState.audio.duration : Number.MAX_SAFE_INTEGER;
-    reviewState.audio.currentTime = clamp(audioSkip + (seekSeconds - started) / speed, audioSkip, audioDuration);
+    reviewState.audio.currentTime = clamp(getAudioCurrentTimeForSongTime(seekSeconds), 0, audioDuration);
     updateReviewPlaybackUi();
     drawMicChart(latestTake.history || [], getSelectedMidiTrack());
     return;
