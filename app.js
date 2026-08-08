@@ -66,7 +66,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.09.1";
+const APP_VERSION = "2026.08.09.2";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -76,6 +76,11 @@ const defaultMidiSongs = {
     title: "M2 自由になりたい（別紙コーラス）",
     fileName: "M2自由になりたい-別紙コーラス.mid",
     url: "./assets/midi/jiyu-ni-naritai-chorus.mid",
+  },
+  jiyu_ni_naritai: {
+    title: "M2 自由になりたい",
+    fileName: "M2自由になりたい.mid",
+    url: "./assets/midi/jiyu-ni-naritai.mid",
   },
   yarukoto_takusan: {
     title: "M3 やることたくさん",
@@ -101,6 +106,16 @@ const defaultMidiSongs = {
     title: "M9 魔法のりんご",
     fileName: "M9魔法のりんご.mid",
     url: "./assets/midi/maho-no-ringo.mid",
+  },
+  taisetsu_na_koto: {
+    title: "M11 大切なこと",
+    fileName: "M11大切なこと.mid",
+    url: "./assets/midi/taisetsu-na-koto.mid",
+  },
+  nani_ga_dekiru: {
+    title: "M12 何ができる",
+    fileName: "M12何ができる.mid",
+    url: "./assets/midi/nani-ga-dekiru.mid",
   },
   kaeritai: {
     title: "M14 帰りたい",
