@@ -9,6 +9,7 @@ Put the bundled preset songs here before publishing:
 - `yamerarenai.mid`
 - `maho-no-ringo.mid`
 - `kaeritai.mid`
+- `taisetsu-na-tomodachi-e.mid`
 - `glass-no-kutsu.mid`
 
 These files are loaded directly by the browser from GitHub Pages.

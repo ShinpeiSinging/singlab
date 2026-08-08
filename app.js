@@ -66,7 +66,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.07.5";
+const APP_VERSION = "2026.08.09.1";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -106,6 +106,11 @@ const defaultMidiSongs = {
     title: "M14 帰りたい",
     fileName: "M14帰りたい.mid",
     url: "./assets/midi/kaeritai.mid",
+  },
+  taisetsu_na_tomodachi_e: {
+    title: "M14 大切な友だちへ",
+    fileName: "M14大切な友だちへ.mid",
+    url: "./assets/midi/taisetsu-na-tomodachi-e.mid",
   },
   glass_no_kutsu: {
     title: "ガラスの靴",
