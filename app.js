@@ -66,7 +66,7 @@
   loadDemo: document.getElementById("load-demo"),
 };
 
-const APP_VERSION = "2026.08.09.2";
+const APP_VERSION = "2026.08.09.3";
 const APP_JS_LOADED_AT = new Date();
 const MIC_ANALYSIS_FFT_SIZE = 4096;
 let pitchViewOffsetSemitones = 0;
@@ -133,6 +133,28 @@ const defaultMidiSongs = {
     url: "./assets/midi/glass-no-kutsu.mid",
   },
 };
+
+function populateDefaultMidiSelect() {
+  if (!els.defaultMidi) return;
+  const currentValue = els.defaultMidi.value;
+  els.defaultMidi.innerHTML = "";
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "プリセットを選択";
+  els.defaultMidi.appendChild(placeholder);
+
+  for (const [songId, song] of Object.entries(defaultMidiSongs)) {
+    const option = document.createElement("option");
+    option.value = songId;
+    option.textContent = song.title;
+    els.defaultMidi.appendChild(option);
+  }
+
+  if (currentValue && defaultMidiSongs[currentValue]) {
+    els.defaultMidi.value = currentValue;
+  }
+}
 
 const demoMusicXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -3236,6 +3258,7 @@ function toggleMetronome() {
 function init() {
   updateAppVersionInfo();
   resetMidiDebugLog();
+  populateDefaultMidiSelect();
   if (els.countIn) {
     els.countIn.value = "off";
     const countInLabel = els.countIn.closest("label");
